@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+          'Helvetica Neue', Arial, sans-serif;
+        background: #f8f9fa;
+        padding: 20px;
+        color: #333;
+      }
+
+      .container {
+        background: white;
+        border-radius: 8px;
+        padding: 24px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+
+      h2 {
+        color: #1a73e8;
+        margin-bottom: 20px;
+        font-size: 20px;
+        font-weight: 600;
+      }
+
+      .sale-select-group {
+        margin-bottom: 24px;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 500;
+        color: #5f6368;
+        font-size: 14px;
+      }
+
+      select {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #dadce0;
+        border-radius: 4px;
+        font-size: 14px;
+        transition: border-color 0.2s;
+        font-family: inherit;
+        background: white;
+      }
+
+      select:focus {
+        outline: none;
+        border-color: #1a73e8;
+        box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.1);
+      }
+
+      .sale-details {
+        display: none;
+        margin-top: 24px;
+      }
+
+      .sale-details.active {
+        display: block;
+      }
+
+      .sale-header {
+        background: #f8f9fa;
+        padding: 16px;
+        border-radius: 6px;
+        margin-bottom: 20px;
+        border-left: 4px solid #1a73e8;
+      }
+
+      .sale-header-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+
+      .sale-header-row:last-child {
+        margin-bottom: 0;
+      }
+
+      .sale-header-label {
+        font-weight: 500;
+        color: #5f6368;
+        font-size: 13px;
+      }
+
+      .sale-header-value {
+        font-weight: 600;
+        color: #333;
+        font-size: 14px;
+      }
+
+      .sale-total {
+        font-size: 18px;
+        color: #1a73e8;
+        font-weight: 700;
+      }
+
+      .items-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 16px;
+      }
+
+      .items-table th {
+        background: #f8f9fa;
+        padding: 12px;
+        text-align: left;
+        font-weight: 600;
+        font-size: 13px;
+        color: #5f6368;
+        border-bottom: 2px solid #e0e0e0;
+      }
+
+      .items-table td {
+        padding: 12px;
+        border-bottom: 1px solid #e0e0e0;
+        font-size: 14px;
+      }
+
+      .items-table tr:last-child td {
+        border-bottom: none;
+      }
+
+      .items-table tr:hover {
+        background: #f8f9fa;
+      }
+
+      .text-right {
+        text-align: right;
+      }
+
+      .text-center {
+        text-align: center;
+      }
+
+      .free-badge {
+        background: #34a853;
+        color: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 500;
+      }
+
+      .empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        color: #5f6368;
+        font-size: 14px;
+      }
+
+      .message {
+        padding: 12px;
+        border-radius: 4px;
+        margin-bottom: 16px;
+        display: none;
+        font-size: 14px;
+      }
+
+      .message.error {
+        background: #ffebee;
+        color: #c62828;
+        border: 1px solid #ffcdd2;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h2>View Sale Details</h2>
+
+      <div id="message" class="message"></div>
+
+      <div class="sale-select-group">
+        <label for="saleSelect">Select Sale</label>
+        <select id="saleSelect" onchange="loadSaleDetails()">
+          <option value="">-- Select a sale --</option>
+          <? 
+            // Access template variable
+            var templateSales = sales || [];
+            if (templateSales.length === 0) { 
+          ?>
+          <option value="">No sales available</option>
+          <? } else { ?>
+          <? for (var i = 0; i < templateSales.length; i++) { ?>
+          <? 
+                var sale = templateSales[i];
+                var dateObj = sale.date instanceof Date 
+                  ? sale.date 
+                  : new Date(sale.date);
+                var dateStr = dateObj.toLocaleString(); // Includes both date and time
+              ?>
+          <option value="<?= sale.saleId ?>">
+            <?= dateStr ?>
+            - $<?= sale.totalAmount.toFixed(2) ?>
+            (<?= sale.items ? sale.items.length : 0 ?>
+            items)
+          </option>
+          <? } ?>
+          <? } ?>
+        </select>
+      </div>
+
+      <div id="saleDetails" class="sale-details">
+        <div class="sale-header">
+          <div class="sale-header-row">
+            <span class="sale-header-label">Sale ID:</span>
+            <span class="sale-header-value" id="saleId"></span>
+          </div>
+          <div class="sale-header-row">
+            <span class="sale-header-label">Date:</span>
+            <span class="sale-header-value" id="saleDate"></span>
+          </div>
+          <div class="sale-header-row">
+            <span class="sale-header-label">Total Amount:</span>
+            <span class="sale-header-value sale-total" id="saleTotal"></span>
+          </div>
+        </div>
+
+        <div id="itemsContainer">
+          <table class="items-table">
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th class="text-center">Qty</th>
+                <th class="text-right">Unit Price</th>
+                <th class="text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody id="itemsTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="emptyState" class="empty-state" style="display: none">
+        Select a sale from the dropdown to view its details
+      </div>
+    </div>
+
+    <script>
+      var sales = [];
+      <?
+        // Access template variable and convert to JSON
+        var templateSales = sales || [];
+        var salesJson = JSON.stringify(templateSales);
+      ?>
+
+      try {
+        var templateSalesJson = <?= salesJson ?>;
+        console.log('Template sales JSON type:', typeof templateSalesJson);
+
+        if (typeof templateSalesJson === 'string') {
+          try {
+            sales = JSON.parse(templateSalesJson);
+            console.log('Parsed sales from string, count:', sales.length);
+          } catch(parseError) {
+            console.error('Error parsing sales JSON:', parseError, 'String was:', templateSalesJson.substring(0, 100));
+            sales = [];
+          }
+        } else if (Array.isArray(templateSalesJson)) {
+          sales = templateSalesJson;
+          console.log('Sales is already array, count:', sales.length);
+        } else {
+          console.warn('Unknown type of sales:', typeof templateSalesJson, templateSalesJson);
+          sales = [];
+        }
+      } catch(e) {
+        console.error('Error loading sales from template:', e);
+        sales = [];
+      }
+
+      // Ensure sales is always an array
+      if (!Array.isArray(sales)) {
+        console.warn('Sales is not an array, resetting. Value:', sales);
+        sales = [];
+      }
+
+      console.log('Final sales array length:', sales.length);
+      if (sales.length > 0) {
+        console.log('First sale:', sales[0]);
+      } else {
+        console.warn('No sales found! Check if getAllSalesWithItems() is returning data.');
+      }
+
+      function loadSaleDetails() {
+        const saleSelect = document.getElementById('saleSelect');
+        const saleId = saleSelect.value;
+        const saleDetails = document.getElementById('saleDetails');
+        const emptyState = document.getElementById('emptyState');
+
+        if (!saleId) {
+          saleDetails.classList.remove('active');
+          emptyState.style.display = 'block';
+          return;
+        }
+
+        const sale = sales.find(function(s) {
+          return s.saleId === saleId;
+        });
+
+        if (!sale) {
+          showMessage('Sale not found', 'error');
+          return;
+        }
+
+        // Update header
+        document.getElementById('saleId').textContent = sale.saleId;
+
+        // Handle date - it might be ISO string or Date object
+        const saleDateObj = sale.date instanceof Date
+          ? sale.date
+          : new Date(sale.date);
+        const saleDate = saleDateObj.toLocaleString(); // Includes both date and time
+        document.getElementById('saleDate').textContent = saleDate;
+        document.getElementById('saleTotal').textContent = '$' + sale.totalAmount.toFixed(2);
+
+        // Update items table
+        const tableBody = document.getElementById('itemsTableBody');
+        tableBody.innerHTML = '';
+
+        if (sale.items.length === 0) {
+          tableBody.innerHTML = '<tr><td colspan="4" class="text-center">No items in this sale</td></tr>';
+        } else {
+          sale.items.forEach(function(item) {
+            const row = document.createElement('tr');
+            const unitPrice = item.isFree ? '<span class="free-badge">FREE</span>' : '$' + item.unitPrice.toFixed(2);
+            const finalPrice = item.isFree ? '<span class="free-badge">FREE</span>' : '$' + item.finalPrice.toFixed(2);
+
+            row.innerHTML =
+              '<td>' + item.productName + '</td>' +
+              '<td class="text-center">' + item.quantity + '</td>' +
+              '<td class="text-right">' + unitPrice + '</td>' +
+              '<td class="text-right">' + finalPrice + '</td>';
+
+            tableBody.appendChild(row);
+          });
+        }
+
+        saleDetails.classList.add('active');
+        emptyState.style.display = 'none';
+      }
+
+      function showMessage(text, type) {
+        const messageDiv = document.getElementById('message');
+        messageDiv.textContent = text;
+        messageDiv.className = 'message ' + type;
+        messageDiv.style.display = 'block';
+      }
+    </script>
+  </body>
+</html>

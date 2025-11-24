@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+          'Helvetica Neue', Arial, sans-serif;
+        background: #f8f9fa;
+        padding: 20px;
+        color: #333;
+      }
+
+      .container {
+        background: white;
+        border-radius: 8px;
+        padding: 24px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+
+      h2 {
+        color: #1a73e8;
+        margin-bottom: 20px;
+        font-size: 20px;
+        font-weight: 600;
+      }
+
+      .sale-item {
+        background: #f8f9fa;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        padding: 16px;
+        margin-bottom: 16px;
+        position: relative;
+      }
+
+      .sale-item-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+
+      .item-number {
+        font-weight: 600;
+        color: #5f6368;
+        font-size: 14px;
+      }
+
+      .remove-btn {
+        background: #ea4335;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 6px 12px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+
+      .remove-btn:hover {
+        background: #c5221f;
+      }
+
+      .form-row {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .form-group {
+        display: flex;
+        flex-direction: column;
+      }
+
+      label {
+        margin-bottom: 6px;
+        font-weight: 500;
+        color: #5f6368;
+        font-size: 13px;
+      }
+
+      select,
+      input[type='number'] {
+        padding: 10px 12px;
+        border: 1px solid #dadce0;
+        border-radius: 4px;
+        font-size: 14px;
+        transition: border-color 0.2s;
+        font-family: inherit;
+        background: white;
+        width: 100%;
+        box-sizing: border-box;
+      }
+
+      select:focus,
+      input:focus {
+        outline: none;
+        border-color: #1a73e8;
+        box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.1);
+      }
+
+      .checkbox-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      input[type='checkbox'] {
+        width: 20px;
+        height: 20px;
+        cursor: pointer;
+        margin: 0;
+        flex-shrink: 0;
+      }
+
+      .checkbox-group label {
+        margin: 0;
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .stock-info {
+        font-size: 12px;
+        color: #5f6368;
+        margin-top: 4px;
+        font-style: italic;
+      }
+
+      .stock-warning {
+        color: #ea4335;
+        font-weight: 500;
+      }
+
+      .add-item-btn {
+        background: #34a853;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 12px 24px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.2s;
+        width: 100%;
+        margin-bottom: 20px;
+      }
+
+      .add-item-btn:hover {
+        background: #2d8e47;
+      }
+
+      .button-group {
+        display: flex;
+        gap: 10px;
+        margin-top: 24px;
+        padding-top: 20px;
+        border-top: 1px solid #e0e0e0;
+      }
+
+      button[type='submit'],
+      .btn-secondary {
+        flex: 1;
+        padding: 12px 24px;
+        border: none;
+        border-radius: 4px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-family: inherit;
+      }
+
+      button[type='submit'] {
+        background: #1a73e8;
+        color: white;
+      }
+
+      button[type='submit']:hover {
+        background: #1557b0;
+        box-shadow: 0 2px 4px rgba(26, 115, 232, 0.3);
+      }
+
+      .btn-secondary {
+        background: #f1f3f4;
+        color: #5f6368;
+      }
+
+      .btn-secondary:hover {
+        background: #e8eaed;
+      }
+
+      .message {
+        padding: 12px;
+        border-radius: 4px;
+        margin-bottom: 16px;
+        display: none;
+        font-size: 14px;
+      }
+
+      .message.success {
+        background: #e8f5e9;
+        color: #2e7d32;
+        border: 1px solid #c8e6c9;
+      }
+
+      .message.error {
+        background: #ffebee;
+        color: #c62828;
+        border: 1px solid #ffcdd2;
+      }
+
+      .empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        color: #5f6368;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h2>Add Sale</h2>
+
+      <div id="message" class="message"></div>
+
+      <div id="items-container">
+        <div class="empty-state" id="empty-state">
+          Click "Add Product" to start adding items to the sale
+        </div>
+      </div>
+
+      <button class="add-item-btn" onclick="addItem()">+ Add Product</button>
+
+      <div class="button-group">
+        <button
+          type="button"
+          class="btn-secondary"
+          onclick="google.script.host.close()"
+        >
+          Cancel
+        </button>
+        <button type="button" onclick="submitSale()">Submit Sale</button>
+      </div>
+    </div>
+
+    <script>
+      // Initialize products as empty array
+      var products = [];
+
+      // Try to get products from template
+      <? try { ?>
+        var templateProductsJson = <?= JSON.stringify(products || []) ?>;
+        console.log('Raw templateProductsJson:', templateProductsJson);
+        console.log('Type of templateProductsJson:', typeof templateProductsJson);
+
+        // templateProductsJson might be a string, we need to parse it
+        if (typeof templateProductsJson === 'string') {
+          try {
+            products = JSON.parse(templateProductsJson);
+            console.log('Parsed products from string:', products);
+          } catch(parseError) {
+            console.error('Error parsing products JSON:', parseError, 'String was:', templateProductsJson);
+            products = [];
+          }
+        } else if (Array.isArray(templateProductsJson)) {
+          // If it's already an array (shouldn't happen but just in case)
+          console.log('templateProductsJson is already an array');
+          products = templateProductsJson;
+        } else {
+          console.warn('templateProductsJson is neither string nor array:', templateProductsJson);
+          products = [];
+        }
+      <? } catch(e) { ?>
+        console.error('Error loading products from template:', e);
+        products = [];
+      <? } ?>
+
+      // Final safety check - ensure products is always an array
+      if (!Array.isArray(products)) {
+        console.warn('Products is not an array, resetting to empty array. Value was:', products, 'Type:', typeof products);
+        // Try to parse if it's a string
+        if (typeof products === 'string') {
+          try {
+            products = JSON.parse(products);
+          } catch(e) {
+            products = [];
+          }
+        } else {
+          products = [];
+        }
+      }
+
+      var itemCount = 0;
+
+      console.log('Products loaded:', products);
+      console.log('Products type:', typeof products);
+      console.log('Is array:', Array.isArray(products));
+      console.log('Products count:', Array.isArray(products) ? products.length : 'N/A (not an array)');
+
+      function addItem() {
+        try {
+          console.log('addItem called, products:', products);
+          console.log('Is array:', Array.isArray(products));
+
+          if (!Array.isArray(products) || products.length === 0) {
+            showMessage('No products available. Please add products first using the "Add Product" menu.', 'error');
+            return;
+          }
+
+          itemCount++;
+          const container = document.getElementById('items-container');
+          const emptyState = document.getElementById('empty-state');
+
+          if (!container) {
+            console.error('Container not found');
+            alert('Error: Container element not found');
+            return;
+          }
+
+          if (emptyState) {
+            emptyState.style.display = 'none';
+          }
+
+          const itemDiv = document.createElement('div');
+          itemDiv.className = 'sale-item';
+          itemDiv.id = 'item-' + itemCount;
+
+          // Build product options
+          let productOptions = '<option value="">Select a product</option>';
+          if (Array.isArray(products) && products.length > 0) {
+            productOptions += products.map(function(p) {
+              if (p && p.id && p.name) {
+                return '<option value="' + p.id + '">' + p.name + '</option>';
+              }
+              return '';
+            }).filter(function(opt) { return opt !== ''; }).join('');
+          } else {
+            productOptions += '<option value="">No products available</option>';
+          }
+
+          itemDiv.innerHTML =
+            '<div class="sale-item-header">' +
+              '<span class="item-number">Item #' + itemCount + '</span>' +
+              '<button type="button" class="remove-btn" onclick="removeItem(' + itemCount + ')">Remove</button>' +
+            '</div>' +
+            '<div class="form-row">' +
+              '<div class="form-group">' +
+                '<label>Product</label>' +
+                '<select class="prod-select" onchange="updateStock(this, ' + itemCount + ')">' +
+                  productOptions +
+                '</select>' +
+                '<span class="stock-info" id="stock-info-' + itemCount + '"></span>' +
+              '</div>' +
+              '<div class="form-group">' +
+                '<label>Quantity</label>' +
+                '<input type="number" class="qty-input" value="1" min="1" onchange="updateStock(this.parentElement.parentElement.querySelector(\'.prod-select\'), ' + itemCount + ')">' +
+              '</div>' +
+              '<div class="form-group">' +
+                '<label>Unit Price (Optional)</label>' +
+                '<input type="number" class="unit-price-input" step="0.01" min="0" placeholder="Leave empty to use product price" id="unit-price-' + itemCount + '">' +
+              '</div>' +
+              '<div class="form-group">' +
+                '<div class="checkbox-group">' +
+                  '<input type="checkbox" class="free-checkbox" id="free-' + itemCount + '" onchange="toggleUnitPrice(' + itemCount + ')">' +
+                  '<label for="free-' + itemCount + '">Free Item</label>' +
+                '</div>' +
+              '</div>' +
+            '</div>';
+
+          container.appendChild(itemDiv);
+          console.log('Item added successfully:', itemCount);
+        } catch (error) {
+          console.error('Error adding item:', error);
+          alert('Error adding item: ' + error.message);
+        }
+      }
+
+      function removeItem(id) {
+        const item = document.getElementById('item-' + id);
+        if (item) {
+          item.remove();
+        }
+
+        // Show empty state if no items left
+        const container = document.getElementById('items-container');
+        const items = container.querySelectorAll('.sale-item');
+        if (items.length === 0) {
+          const emptyState = document.getElementById('empty-state');
+          if (emptyState) {
+            emptyState.style.display = 'block';
+          }
+        }
+      }
+
+      function toggleUnitPrice(itemId) {
+        const freeCheckbox = document.getElementById('free-' + itemId);
+        const unitPriceInput = document.getElementById('unit-price-' + itemId);
+        if (freeCheckbox && unitPriceInput) {
+          if (freeCheckbox.checked) {
+            unitPriceInput.disabled = true;
+            unitPriceInput.value = '';
+          } else {
+            unitPriceInput.disabled = false;
+          }
+        }
+      }
+
+      function updateStock(select, itemId) {
+        if (!Array.isArray(products) || products.length === 0) {
+          return;
+        }
+
+        const prodId = select.value;
+        const stockInfo = document.getElementById('stock-info-' + itemId);
+        const qtyInput = select.closest('.sale-item').querySelector('.qty-input');
+
+        if (!prodId) {
+          if (stockInfo) {
+            stockInfo.textContent = '';
+            stockInfo.className = 'stock-info';
+          }
+          return;
+        }
+
+        const prod = products.find(function(p) { return p && p.id === prodId; });
+        if (prod && stockInfo) {
+          const qty = Number(qtyInput.value) || 1;
+          const available = prod.stock || 0;
+
+          if (qty > available) {
+            stockInfo.textContent = '⚠️ Only ' + available + ' available';
+            stockInfo.className = 'stock-info stock-warning';
+          } else {
+            stockInfo.textContent = available + ' in stock';
+            stockInfo.className = 'stock-info';
+          }
+        }
+      }
+
+      function submitSale() {
+        const items = document.querySelectorAll('.sale-item');
+
+        if (items.length === 0) {
+          showMessage('Please add at least one product to the sale', 'error');
+          return;
+        }
+
+        const saleItems = [];
+        let hasError = false;
+
+        items.forEach((item, index) => {
+          const prodSelect = item.querySelector('.prod-select');
+          const qtyInput = item.querySelector('.qty-input');
+          const unitPriceInput = item.querySelector('.unit-price-input');
+          const freeCheckbox = item.querySelector('.free-checkbox');
+
+          const prodId = prodSelect.value;
+          const qty = Number(qtyInput.value) || 0;
+          const unitPrice = unitPriceInput.value ? Number(unitPriceInput.value) : null;
+          const isFree = freeCheckbox.checked;
+
+          if (!prodId) {
+            showMessage(`Item #${index + 1}: Please select a product`, 'error');
+            hasError = true;
+            return;
+          }
+
+          if (qty <= 0) {
+            showMessage(`Item #${index + 1}: Please enter a valid quantity`, 'error');
+            hasError = true;
+            return;
+          }
+
+          if (!Array.isArray(products)) {
+            showMessage('Products data is not available. Please refresh and try again.', 'error');
+            hasError = true;
+            return;
+          }
+
+          const prod = products.find(function(p) { return p && p.id === prodId; });
+          if (!prod) {
+            showMessage('Item #' + (index + 1) + ': Product not found', 'error');
+            hasError = true;
+            return;
+          }
+
+          if (qty > (prod.stock || 0)) {
+            showMessage('Item #' + (index + 1) + ': Not enough stock for ' + prod.name + '. Available: ' + prod.stock, 'error');
+            hasError = true;
+            return;
+          }
+
+          saleItems.push({
+            productId: prodId,
+            qty: qty,
+            isFree: isFree,
+            unitPrice: unitPrice
+          });
+        });
+
+        if (hasError) {
+          return;
+        }
+
+        google.script.run
+          .withSuccessHandler(function(response) {
+            if (response.success) {
+              showMessage(response.message, 'success');
+              setTimeout(() => {
+                google.script.host.close();
+              }, 2000);
+            } else {
+              showMessage(response.message, 'error');
+            }
+          })
+          .withFailureHandler(function(error) {
+            showMessage('Error: ' + error.message, 'error');
+          })
+          .submitSale(saleItems);
+      }
+
+      function showMessage(text, type) {
+        const messageDiv = document.getElementById('message');
+        messageDiv.textContent = text;
+        messageDiv.className = 'message ' + type;
+        messageDiv.style.display = 'block';
+
+        // Scroll to top to show message
+        window.scrollTo(0, 0);
+      }
+
+      // Add first item by default
+      window.onload = function() {
+        console.log('Window loaded, products:', products);
+        console.log('Is array:', Array.isArray(products));
+        if (Array.isArray(products) && products.length > 0) {
+          addItem();
+        } else {
+          showMessage('No products available. Please add products first using the "Add Product" menu.', 'error');
+        }
+      };
+    </script>
+  </body>
+</html>
