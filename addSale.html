@@ -225,9 +225,59 @@
         padding: 40px 20px;
         color: #5f6368;
       }
+
+      .loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255, 255, 255, 0.9);
+        display: none;
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+        z-index: 1000;
+      }
+
+      .loading-overlay.active {
+        display: flex;
+      }
+
+      .spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid #e0e0e0;
+        border-top-color: #1a73e8;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .loading-text {
+        margin-top: 16px;
+        color: #5f6368;
+        font-size: 14px;
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
     </style>
   </head>
   <body>
+    <!-- Loading overlay -->
+    <div class="loading-overlay" id="loading-overlay">
+      <div class="spinner"></div>
+      <div class="loading-text">Processing sale...</div>
+    </div>
+
     <div class="container">
       <h2>Add Sale</h2>
 
@@ -240,6 +290,39 @@
       </div>
 
       <button class="add-item-btn" onclick="addItem()">+ Add Product</button>
+
+      <!-- Sale-level adjustments -->
+      <div class="sale-item" style="background: #e8f0fe; border-color: #1a73e8">
+        <div class="sale-item-header">
+          <span class="item-number" style="color: #1a73e8"
+            >💰 Sale Adjustments (Optional)</span
+          >
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Delivery Fee</label>
+            <input
+              type="number"
+              id="delivery-fee"
+              step="0.01"
+              min="0"
+              placeholder="Deducted from total"
+              value=""
+            />
+          </div>
+          <div class="form-group">
+            <label>Sale Discount</label>
+            <input
+              type="number"
+              id="sale-discount"
+              step="0.01"
+              min="0"
+              placeholder="Discount on total sale"
+              value=""
+            />
+          </div>
+        </div>
+      </div>
 
       <div class="button-group">
         <button
@@ -448,7 +531,8 @@
       }
 
       function submitSale() {
-        const items = document.querySelectorAll('.sale-item');
+        try {
+        const items = document.querySelectorAll('.sale-item:not([style*="background: #e8f0fe"])');
 
         if (items.length === 0) {
           showMessage('Please add at least one product to the sale', 'error');
@@ -512,21 +596,48 @@
           return;
         }
 
+        // Get sale-level adjustments
+        const deliveryFee = Number(document.getElementById('delivery-fee').value) || 0;
+        const saleDiscount = Number(document.getElementById('sale-discount').value) || 0;
+
+        // Show loading and disable button
+        showLoading(true);
+
         google.script.run
           .withSuccessHandler(function(response) {
-            if (response.success) {
+            showLoading(false);
+            if (response && response.success) {
               showMessage(response.message, 'success');
               setTimeout(() => {
                 google.script.host.close();
               }, 2000);
             } else {
-              showMessage(response.message, 'error');
+              showMessage(response ? response.message : 'Unknown error occurred', 'error');
             }
           })
           .withFailureHandler(function(error) {
-            showMessage('Error: ' + error.message, 'error');
+            showLoading(false);
+            console.error('Submit sale error:', error);
+            showMessage('Error: ' + (error.message || error.toString() || 'Unknown error'), 'error');
           })
-          .submitSale(saleItems);
+          .submitSale(saleItems, deliveryFee, saleDiscount);
+        } catch (e) {
+          showLoading(false);
+          console.error('Submit error:', e);
+          showMessage('Error: ' + e.message, 'error');
+        }
+      }
+
+      function showLoading(show) {
+        const overlay = document.getElementById('loading-overlay');
+        const submitBtn = document.querySelector('.button-group button:last-child');
+        if (show) {
+          overlay.classList.add('active');
+          if (submitBtn) submitBtn.disabled = true;
+        } else {
+          overlay.classList.remove('active');
+          if (submitBtn) submitBtn.disabled = false;
+        }
       }
 
       function showMessage(text, type) {

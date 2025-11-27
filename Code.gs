@@ -9,15 +9,15 @@
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('Inventory App')
+    .addItem('Add Sale', 'openAddSaleSidebar')
+    .addItem('Delete Sale', 'openDeleteSaleSidebar')
+    .addSeparator()
+    .addItem('Generate Monthly Report', 'generateMonthlyReport')
+    .addItem('Sync Sales View to Data', 'syncSalesViewToData')
+    .addSeparator()
     .addItem('Add Product', 'openAddProductSidebar')
     .addItem('Edit Product', 'openEditProductSidebar')
     .addItem('Delete Product', 'openDeleteProductSidebar')
-    .addSeparator()
-    .addItem('Add Sale', 'openAddSaleSidebar')
-    .addItem('View Sale Details', 'openViewSaleSidebar')
-    .addSeparator()
-    .addItem('Generate Monthly Report', 'generateMonthlyReport')
-    .addItem('Create Combined Sales View', 'createCombinedSalesView')
     .addSeparator()
     .addItem('Update Product Names in Sales', 'updateSaleItemsWithProductNames')
     .addToUi();
@@ -60,7 +60,7 @@ function getProducts() {
   const rows = sheet
     .getRange(2, 1, lastRow - 1, sheet.getLastColumn())
     .getValues();
-  return rows.map((r) => ({
+  const products = rows.map((r) => ({
     id: r[idCol],
     name: r[nameCol],
     desc: r[descCol],
@@ -68,6 +68,9 @@ function getProducts() {
     discount: r[discountCol],
     stock: r[stockCol],
   }));
+  // Sort by name A-Z
+  products.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  return products;
 }
 
 /**
@@ -427,17 +430,51 @@ function openAddSaleSidebar() {
 /**
  * Submit a sale with multiple items
  */
-function submitSale(saleItems) {
+function submitSale(saleItems, deliveryFee, saleDiscount) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
+    deliveryFee = deliveryFee || 0;
+    saleDiscount = saleDiscount || 0;
 
     // Get or create sheets
     let saleSheet = ss.getSheetByName('Sales');
     if (!saleSheet) {
       saleSheet = ss.insertSheet('Sales');
-      saleSheet.appendRow(['Sale ID', 'Date', 'Total Amount']);
+      saleSheet.appendRow([
+        'Sale ID',
+        'Date',
+        'Subtotal',
+        'Delivery Fee',
+        'Discount',
+        'Total Amount',
+      ]);
     } else if (saleSheet.getLastRow() === 0) {
-      saleSheet.appendRow(['Sale ID', 'Date', 'Total Amount']);
+      saleSheet.appendRow([
+        'Sale ID',
+        'Date',
+        'Subtotal',
+        'Delivery Fee',
+        'Discount',
+        'Total Amount',
+      ]);
+    }
+
+    // Check if Sales sheet needs new columns
+    const saleHeaders = saleSheet
+      .getRange(1, 1, 1, saleSheet.getLastColumn())
+      .getValues()[0];
+    if (!saleHeaders.includes('Subtotal')) {
+      // Old format, need to add columns
+      const totalColIndex = saleHeaders.indexOf('Total Amount');
+      if (totalColIndex >= 0) {
+        // Insert Subtotal, Delivery Fee, Discount before Total Amount
+        saleSheet.insertColumnBefore(totalColIndex + 1);
+        saleSheet.insertColumnBefore(totalColIndex + 1);
+        saleSheet.insertColumnBefore(totalColIndex + 1);
+        saleSheet.getRange(1, totalColIndex + 1).setValue('Subtotal');
+        saleSheet.getRange(1, totalColIndex + 2).setValue('Delivery Fee');
+        saleSheet.getRange(1, totalColIndex + 3).setValue('Discount');
+      }
     }
 
     let itemSheet = ss.getSheetByName('SaleItems');
@@ -504,7 +541,11 @@ function submitSale(saleItems) {
       let unitPrice;
       if (item.isFree) {
         unitPrice = 0;
-      } else if (item.unitPrice !== null && item.unitPrice !== undefined && item.unitPrice !== '') {
+      } else if (
+        item.unitPrice !== null &&
+        item.unitPrice !== undefined &&
+        item.unitPrice !== ''
+      ) {
         // Use the provided unit price
         unitPrice = Number(item.unitPrice);
       } else {
@@ -594,8 +635,47 @@ function submitSale(saleItems) {
       ]);
     });
 
-    // Insert sale summary
-    saleSheet.appendRow([saleId, date, totalAmount]);
+    // Calculate final total
+    const subtotal = totalAmount;
+    const finalTotal = subtotal - deliveryFee - saleDiscount;
+
+    // Insert sale summary with new columns
+    // Find column indices for Sales sheet
+    const updatedSaleHeaders = saleSheet
+      .getRange(1, 1, 1, saleSheet.getLastColumn())
+      .getValues()[0];
+    const subtotalCol = updatedSaleHeaders.indexOf('Subtotal') + 1;
+    const deliveryFeeCol = updatedSaleHeaders.indexOf('Delivery Fee') + 1;
+    const discountCol = updatedSaleHeaders.indexOf('Discount') + 1;
+    const totalCol = updatedSaleHeaders.indexOf('Total Amount') + 1;
+
+    const nextSaleRow = saleSheet.getLastRow() + 1;
+    saleSheet.getRange(nextSaleRow, 1).setValue(saleId);
+    saleSheet.getRange(nextSaleRow, 2).setValue(date);
+    if (subtotalCol > 0)
+      saleSheet.getRange(nextSaleRow, subtotalCol).setValue(subtotal);
+    if (deliveryFeeCol > 0)
+      saleSheet.getRange(nextSaleRow, deliveryFeeCol).setValue(deliveryFee);
+    if (discountCol > 0)
+      saleSheet.getRange(nextSaleRow, discountCol).setValue(saleDiscount);
+    if (totalCol > 0) {
+      saleSheet.getRange(nextSaleRow, totalCol).setValue(finalTotal);
+    } else {
+      // Fallback for old format
+      saleSheet.getRange(nextSaleRow, 3).setValue(finalTotal);
+    }
+
+    // Track delivery fee in DeliveryCosts sheet if there's a delivery fee
+    if (deliveryFee > 0) {
+      let deliverySheet = ss.getSheetByName('DeliveryCosts');
+      if (!deliverySheet) {
+        deliverySheet = ss.insertSheet('DeliveryCosts');
+        deliverySheet.appendRow(['Sale ID', 'Date', 'Delivery Fee']);
+      } else if (deliverySheet.getLastRow() === 0) {
+        deliverySheet.appendRow(['Sale ID', 'Date', 'Delivery Fee']);
+      }
+      deliverySheet.appendRow([saleId, date, deliveryFee]);
+    }
 
     // Automatically append new sale to Sales View sheet if it exists
     try {
@@ -604,16 +684,22 @@ function submitSale(saleItems) {
         // Only update if the sheet exists and has data
         // Use a small delay to ensure the data is written before reading
         Utilities.sleep(100);
-        appendNewSaleToView(saleId, date, totalAmount, saleItems);
+        appendNewSaleToView(saleId, date, finalTotal, saleItems);
       }
     } catch (viewError) {
       // Silently fail if view update fails - don't break the sale submission
       Logger.log('Error updating Sales View: ' + viewError.toString());
     }
 
+    // Build success message
+    let message = `Sale recorded! Subtotal: $${subtotal.toFixed(2)}`;
+    if (deliveryFee > 0) message += `, Delivery: -$${deliveryFee.toFixed(2)}`;
+    if (saleDiscount > 0) message += `, Discount: -$${saleDiscount.toFixed(2)}`;
+    message += `, Total: $${finalTotal.toFixed(2)}`;
+
     return {
       success: true,
-      message: `Sale recorded successfully! Total: $${totalAmount.toFixed(2)}`,
+      message: message,
     };
   } catch (error) {
     return { success: false, message: error.message };
@@ -651,10 +737,30 @@ function generateMonthlyReport() {
       return;
     }
 
-    // Get all sales with dates
+    // Get all sales with dates (get all columns to support new format)
     const salesData = saleSheet
-      .getRange(2, 1, saleSheet.getLastRow() - 1, 3)
+      .getRange(2, 1, saleSheet.getLastRow() - 1, saleSheet.getLastColumn())
       .getValues();
+
+    // Get sales headers to find column indices
+    const saleHeaders = saleSheet
+      .getRange(1, 1, 1, saleSheet.getLastColumn())
+      .getValues()[0];
+    const saleIdColIdx = 0;
+    const saleDateColIdx = 1;
+    const subtotalColIdx = saleHeaders.indexOf('Subtotal');
+    const deliveryFeeColIdx = saleHeaders.indexOf('Delivery Fee');
+    const discountColIdx = saleHeaders.indexOf('Discount');
+    const totalAmountColIdx = saleHeaders.indexOf('Total Amount');
+
+    // Get delivery costs data
+    let deliveryCostsData = [];
+    const deliverySheet = ss.getSheetByName('DeliveryCosts');
+    if (deliverySheet && deliverySheet.getLastRow() > 1) {
+      deliveryCostsData = deliverySheet
+        .getRange(2, 1, deliverySheet.getLastRow() - 1, 3)
+        .getValues();
+    }
 
     // Get items data - adjust column count based on whether Product Name column exists
     const itemHeaders = itemSheet
@@ -667,74 +773,259 @@ function generateMonthlyReport() {
       .getValues();
 
     // Column indices
-    const quantityColIndex = hasProductName ? 3 : 2; // Quantity column
-    const finalPriceColIndex = hasProductName ? 6 : 5; // Final Price column
+    const productIdColIndex = 1;
+    const productNameColIndex = hasProductName ? 2 : -1;
+    const quantityColIndex = hasProductName ? 3 : 2;
+    const isFreeColIndex = hasProductName ? 4 : 3;
+    const unitPriceColIndex = hasProductName ? 5 : 4;
+    const finalPriceColIndex = hasProductName ? 6 : 5;
 
-    // Create map of saleId to date and total amount
+    // Create map of saleId to date and amounts
     const saleDateMap = {};
     const saleAmountMap = {};
+    const saleDeliveryMap = {};
+    const saleDiscountMap = {};
     salesData.forEach((row) => {
-      saleDateMap[row[0]] = row[1]; // saleId -> date
-      saleAmountMap[row[0]] = row[2]; // saleId -> total amount
+      const saleId = row[saleIdColIdx];
+      saleDateMap[saleId] = row[saleDateColIdx];
+      // Use Total Amount column if exists, otherwise column 3 (old format)
+      saleAmountMap[saleId] =
+        totalAmountColIdx >= 0 ? row[totalAmountColIdx] : row[2];
+      saleDeliveryMap[saleId] =
+        deliveryFeeColIdx >= 0 ? row[deliveryFeeColIdx] || 0 : 0;
+      saleDiscountMap[saleId] =
+        discountColIdx >= 0 ? row[discountColIdx] || 0 : 0;
     });
+
+    // Create map of delivery costs by month
+    const monthlyDeliveryCosts = {};
+    deliveryCostsData.forEach((row) => {
+      const rawDate = row[1];
+      if (rawDate) {
+        const date = rawDate instanceof Date ? rawDate : new Date(rawDate);
+        if (!isNaN(date.getTime())) {
+          const year = date.getFullYear();
+          const month = date.getMonth() + 1;
+          const key = `${year}-${String(month).padStart(2, '0')}`;
+          monthlyDeliveryCosts[key] =
+            (monthlyDeliveryCosts[key] || 0) + (row[2] || 0);
+        }
+      }
+    });
+
+    // Debug logging
+    Logger.log('Sales data count: ' + salesData.length);
+    Logger.log('Items data count: ' + itemsData.length);
+    Logger.log(
+      'Sample sale IDs from Sales: ' +
+        Object.keys(saleDateMap).slice(0, 3).join(', '),
+    );
+    Logger.log(
+      'Sample sale IDs from Items: ' +
+        itemsData
+          .slice(0, 3)
+          .map((r) => r[0])
+          .join(', '),
+    );
+    if (salesData.length > 0) {
+      Logger.log('First sale row: ' + JSON.stringify(salesData[0]));
+    }
+    if (itemsData.length > 0) {
+      Logger.log('First item row: ' + JSON.stringify(itemsData[0]));
+    }
 
     // Aggregate data by month
     const monthDataMap = {};
 
+    // Aggregate data by product
+    const productDataMap = {};
+
+    // Track day of week sales
+    const dayOfWeekSales = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 }; // Sun-Sat
+    const dayOfWeekCount = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
+
+    // Track free items given
+    let totalFreeItems = 0;
+    let totalFreeItemsValue = 0;
+
+    let matchedItems = 0;
+    let unmatchedItems = 0;
+
     // Process items for revenue and quantity
     itemsData.forEach((row) => {
       const saleId = row[0];
+      const productId = row[productIdColIndex];
+      const productName = hasProductName ? row[productNameColIndex] : productId;
       const quantity = row[quantityColIndex] || 0;
+      const isFree = row[isFreeColIndex];
+      const unitPrice = row[unitPriceColIndex] || 0;
       const finalPrice = row[finalPriceColIndex] || 0;
-      const date = saleDateMap[saleId];
+      const rawDate = saleDateMap[saleId];
 
-      if (date) {
-        const year = date.getFullYear();
-        const month = date.getMonth() + 1;
-        const key = `${year}-${String(month).padStart(2, '0')}`;
-
-        if (!monthDataMap[key]) {
-          monthDataMap[key] = {
-            revenue: 0,
-            itemsSold: 0,
-            transactions: new Set(),
-          };
-        }
-        monthDataMap[key].revenue += finalPrice;
-        monthDataMap[key].itemsSold += quantity;
-        monthDataMap[key].transactions.add(saleId);
+      if (!rawDate) {
+        unmatchedItems++;
+        Logger.log('No date found for saleId: ' + saleId);
+        return;
       }
+
+      // Ensure date is a Date object
+      let date;
+      if (rawDate instanceof Date) {
+        date = rawDate;
+      } else {
+        // Try parsing string date in format "DD/MM/YYYY, HH:MM:SS"
+        const dateStr = String(rawDate);
+        const match = dateStr.match(
+          /(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s*(\d{1,2}):(\d{2}):(\d{2})/,
+        );
+        if (match) {
+          const [, day, month, year, hour, min, sec] = match;
+          date = new Date(year, month - 1, day, hour, min, sec);
+        } else {
+          // Fallback to standard parsing
+          date = new Date(rawDate);
+        }
+      }
+
+      if (isNaN(date.getTime())) {
+        Logger.log(
+          'Invalid date for saleId: ' + saleId + ', rawDate: ' + rawDate,
+        );
+        unmatchedItems++;
+        return;
+      }
+
+      matchedItems++;
+      const year = date.getFullYear();
+      const month = date.getMonth() + 1;
+      const key = `${year}-${String(month).padStart(2, '0')}`;
+      const dayOfWeek = date.getDay();
+
+      // Monthly aggregation
+      if (!monthDataMap[key]) {
+        monthDataMap[key] = {
+          revenue: 0,
+          itemsSold: 0,
+          transactions: new Set(),
+          freeItems: 0,
+          deliveryFees: 0,
+          discounts: 0,
+          processedSales: new Set(),
+        };
+      }
+      monthDataMap[key].revenue += finalPrice;
+      monthDataMap[key].itemsSold += quantity;
+      monthDataMap[key].transactions.add(saleId);
+      if (isFree) {
+        monthDataMap[key].freeItems += quantity;
+      }
+      // Add delivery and discount only once per sale
+      if (!monthDataMap[key].processedSales.has(saleId)) {
+        monthDataMap[key].deliveryFees += saleDeliveryMap[saleId] || 0;
+        monthDataMap[key].discounts += saleDiscountMap[saleId] || 0;
+        monthDataMap[key].processedSales.add(saleId);
+      }
+
+      // Product aggregation
+      const productKey = productName || productId;
+      if (!productDataMap[productKey]) {
+        productDataMap[productKey] = {
+          productId: productId,
+          productName: productName,
+          totalQuantity: 0,
+          totalRevenue: 0,
+          freeQuantity: 0,
+          transactionCount: new Set(),
+          avgUnitPrice: 0,
+          priceSum: 0,
+          paidQuantity: 0,
+        };
+      }
+      productDataMap[productKey].totalQuantity += quantity;
+      productDataMap[productKey].totalRevenue += finalPrice;
+      productDataMap[productKey].transactionCount.add(saleId);
+      if (isFree) {
+        productDataMap[productKey].freeQuantity += quantity;
+        totalFreeItems += quantity;
+      } else {
+        productDataMap[productKey].priceSum += unitPrice * quantity;
+        productDataMap[productKey].paidQuantity += quantity;
+      }
+
+      // Day of week tracking
+      dayOfWeekSales[dayOfWeek] += finalPrice;
+      dayOfWeekCount[dayOfWeek]++;
+    });
+
+    // Log summary
+    Logger.log(
+      'Matched items: ' + matchedItems + ', Unmatched items: ' + unmatchedItems,
+    );
+    Logger.log('Month data keys: ' + Object.keys(monthDataMap).join(', '));
+    Logger.log('Product data keys: ' + Object.keys(productDataMap).join(', '));
+
+    // Calculate average unit price for each product
+    Object.keys(productDataMap).forEach((key) => {
+      const prod = productDataMap[key];
+      prod.avgUnitPrice =
+        prod.paidQuantity > 0 ? prod.priceSum / prod.paidQuantity : 0;
     });
 
     // Sort by year-month
     const sortedKeys = Object.keys(monthDataMap).sort();
 
+    let currentRow = 1;
+
+    // ==================== SECTION 1: MONTHLY OVERVIEW ====================
+    reportSheet.getRange(currentRow, 1).setValue('📊 MONTHLY SALES OVERVIEW');
+    reportSheet.getRange(currentRow, 1, 1, 10).merge();
+    reportSheet
+      .getRange(currentRow, 1)
+      .setFontWeight('bold')
+      .setFontSize(14)
+      .setBackground('#1a73e8')
+      .setFontColor('#ffffff');
+    currentRow += 2;
+
     // Write header
-    reportSheet.appendRow([
+    const monthlyHeaders = [
       'Year',
       'Month',
-      'Revenue',
+      'Gross Revenue',
+      'Delivery Fees',
+      'Discounts',
+      'Net Revenue',
       'Transactions',
       'Items Sold',
       'Avg Sale',
       'Growth %',
-    ]);
+    ];
+    reportSheet.getRange(currentRow, 1, 1, 10).setValues([monthlyHeaders]);
+    reportSheet
+      .getRange(currentRow, 1, 1, 10)
+      .setFontWeight('bold')
+      .setBackground('#4285f4')
+      .setFontColor('#ffffff');
+    currentRow++;
 
     // Write monthly data
-    let previousRevenue = null;
+    let previousNetRevenue = null;
     sortedKeys.forEach((key) => {
       const [year, month] = key.split('-');
       const data = monthDataMap[key];
-      const revenue = data.revenue;
+      const grossRevenue = data.revenue;
+      const deliveryFees = data.deliveryFees || 0;
+      const discounts = data.discounts || 0;
+      const netRevenue = grossRevenue - deliveryFees - discounts;
       const transactions = data.transactions.size;
       const itemsSold = data.itemsSold;
-      const avgSale = transactions > 0 ? revenue / transactions : 0;
+      const avgSale = transactions > 0 ? netRevenue / transactions : 0;
 
-      // Calculate growth percentage
+      // Calculate growth percentage based on net revenue
       let growth = '';
-      if (previousRevenue !== null && previousRevenue > 0) {
+      if (previousNetRevenue !== null && previousNetRevenue > 0) {
         const growthPercent =
-          ((revenue - previousRevenue) / previousRevenue) * 100;
+          ((netRevenue - previousNetRevenue) / previousNetRevenue) * 100;
         growth =
           growthPercent >= 0
             ? `+${growthPercent.toFixed(1)}%`
@@ -743,77 +1034,285 @@ function generateMonthlyReport() {
         growth = 'N/A';
       }
 
-      reportSheet.appendRow([
-        year,
-        month,
-        revenue.toFixed(2),
-        transactions,
-        itemsSold,
-        avgSale.toFixed(2),
-        growth,
-      ]);
+      reportSheet
+        .getRange(currentRow, 1, 1, 10)
+        .setValues([
+          [
+            year,
+            month,
+            grossRevenue.toFixed(2),
+            deliveryFees.toFixed(2),
+            discounts.toFixed(2),
+            netRevenue.toFixed(2),
+            transactions,
+            itemsSold,
+            avgSale.toFixed(2),
+            growth,
+          ],
+        ]);
+      currentRow++;
 
-      previousRevenue = revenue;
+      previousNetRevenue = netRevenue;
     });
 
-    // Add summary section
-    const summaryRow = sortedKeys.length + 3;
-    reportSheet.getRange(summaryRow, 1).setValue('SUMMARY');
-    reportSheet.getRange(summaryRow, 1).setFontWeight('bold');
-    reportSheet.getRange(summaryRow, 1).setFontSize(12);
+    // Add borders to monthly section
+    const monthlyDataRange = reportSheet.getRange(
+      currentRow - sortedKeys.length - 1,
+      1,
+      sortedKeys.length + 1,
+      10,
+    );
+    monthlyDataRange.setBorder(true, true, true, true, true, true);
 
-    // Calculate totals
-    let totalRevenue = 0;
+    currentRow += 2;
+
+    // ==================== SECTION 2: PRODUCT PERFORMANCE ====================
+    reportSheet
+      .getRange(currentRow, 1)
+      .setValue('📦 PRODUCT PERFORMANCE (Top Sellers)');
+    reportSheet.getRange(currentRow, 1, 1, 8).merge();
+    reportSheet
+      .getRange(currentRow, 1)
+      .setFontWeight('bold')
+      .setFontSize(14)
+      .setBackground('#34a853')
+      .setFontColor('#ffffff');
+    currentRow += 2;
+
+    // Sort products by quantity sold (descending)
+    const sortedProducts = Object.values(productDataMap).sort(
+      (a, b) => b.totalQuantity - a.totalQuantity,
+    );
+
+    // Product headers
+    const productHeaders = [
+      'Rank',
+      'Product Name',
+      'Units Sold',
+      'Revenue',
+      'Free Given',
+      'Avg Price',
+      'Times Ordered',
+      '% of Sales',
+    ];
+    reportSheet.getRange(currentRow, 1, 1, 8).setValues([productHeaders]);
+    reportSheet
+      .getRange(currentRow, 1, 1, 8)
+      .setFontWeight('bold')
+      .setBackground('#34a853')
+      .setFontColor('#ffffff');
+    currentRow++;
+
+    const totalUnits = sortedProducts.reduce(
+      (sum, p) => sum + p.totalQuantity,
+      0,
+    );
+    const productStartRow = currentRow;
+
+    sortedProducts.forEach((prod, index) => {
+      const percentOfSales =
+        totalUnits > 0
+          ? ((prod.totalQuantity / totalUnits) * 100).toFixed(1) + '%'
+          : '0%';
+      reportSheet
+        .getRange(currentRow, 1, 1, 8)
+        .setValues([
+          [
+            index + 1,
+            prod.productName || prod.productId,
+            prod.totalQuantity,
+            prod.totalRevenue.toFixed(2),
+            prod.freeQuantity,
+            prod.avgUnitPrice.toFixed(2),
+            prod.transactionCount.size,
+            percentOfSales,
+          ],
+        ]);
+      currentRow++;
+    });
+
+    // Add borders to product section
+    const productDataRange = reportSheet.getRange(
+      productStartRow - 1,
+      1,
+      sortedProducts.length + 1,
+      8,
+    );
+    productDataRange.setBorder(true, true, true, true, true, true);
+
+    currentRow += 2;
+
+    // ==================== SECTION 3: SALES BY DAY OF WEEK ====================
+    reportSheet.getRange(currentRow, 1).setValue('📅 SALES BY DAY OF WEEK');
+    reportSheet.getRange(currentRow, 1, 1, 4).merge();
+    reportSheet
+      .getRange(currentRow, 1)
+      .setFontWeight('bold')
+      .setFontSize(14)
+      .setBackground('#fbbc04')
+      .setFontColor('#000000');
+    currentRow += 2;
+
+    const dayNames = [
+      'Sunday',
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+    ];
+    reportSheet
+      .getRange(currentRow, 1, 1, 4)
+      .setValues([['Day', 'Revenue', 'Orders', 'Avg Order']]);
+    reportSheet
+      .getRange(currentRow, 1, 1, 4)
+      .setFontWeight('bold')
+      .setBackground('#fbbc04');
+    currentRow++;
+
+    const dayStartRow = currentRow;
+    let bestDay = { day: '', revenue: 0 };
+
+    dayNames.forEach((dayName, index) => {
+      const revenue = dayOfWeekSales[index];
+      const count = dayOfWeekCount[index];
+      const avgOrder = count > 0 ? revenue / count : 0;
+
+      if (revenue > bestDay.revenue) {
+        bestDay = { day: dayName, revenue: revenue };
+      }
+
+      reportSheet
+        .getRange(currentRow, 1, 1, 4)
+        .setValues([[dayName, revenue.toFixed(2), count, avgOrder.toFixed(2)]]);
+      currentRow++;
+    });
+
+    // Add borders to day section
+    const dayDataRange = reportSheet.getRange(dayStartRow - 1, 1, 8, 4);
+    dayDataRange.setBorder(true, true, true, true, true, true);
+
+    currentRow += 2;
+
+    // ==================== SECTION 4: KEY INSIGHTS & SUMMARY ====================
+    reportSheet.getRange(currentRow, 1).setValue('💡 KEY INSIGHTS & SUMMARY');
+    reportSheet.getRange(currentRow, 1, 1, 4).merge();
+    reportSheet
+      .getRange(currentRow, 1)
+      .setFontWeight('bold')
+      .setFontSize(14)
+      .setBackground('#ea4335')
+      .setFontColor('#ffffff');
+    currentRow += 2;
+
+    // Calculate totals and insights
+    let totalGrossRevenue = 0;
+    let totalDeliveryFees = 0;
+    let totalDiscounts = 0;
     let totalTransactions = 0;
     let totalItemsSold = 0;
+    let totalFreeGiven = 0;
 
     sortedKeys.forEach((key) => {
       const data = monthDataMap[key];
-      totalRevenue += data.revenue;
+      totalGrossRevenue += data.revenue;
+      totalDeliveryFees += data.deliveryFees || 0;
+      totalDiscounts += data.discounts || 0;
       totalTransactions += data.transactions.size;
       totalItemsSold += data.itemsSold;
+      totalFreeGiven += data.freeItems || 0;
     });
 
+    const totalNetRevenue =
+      totalGrossRevenue - totalDeliveryFees - totalDiscounts;
     const overallAvgSale =
-      totalTransactions > 0 ? totalRevenue / totalTransactions : 0;
+      totalTransactions > 0 ? totalNetRevenue / totalTransactions : 0;
+    const avgItemsPerTransaction =
+      totalTransactions > 0 ? totalItemsSold / totalTransactions : 0;
 
-    reportSheet.appendRow(['Total Revenue:', totalRevenue.toFixed(2)]);
-    reportSheet.appendRow(['Total Transactions:', totalTransactions]);
-    reportSheet.appendRow(['Total Items Sold:', totalItemsSold]);
-    reportSheet.appendRow(['Overall Avg Sale:', overallAvgSale.toFixed(2)]);
-    reportSheet.appendRow(['Periods:', sortedKeys.length + ' months']);
+    // Get top 3 products
+    const top3Products = sortedProducts
+      .slice(0, 3)
+      .map((p) => p.productName || p.productId)
+      .join(', ');
 
-    // Format the report
-    const headerRange = reportSheet.getRange(1, 1, 1, 7);
-    headerRange.setFontWeight('bold');
-    headerRange.setBackground('#4285f4');
-    headerRange.setFontColor('#ffffff');
+    // Get slowest selling product (exclude products with 0 sales)
+    const slowestProduct =
+      sortedProducts.length > 0
+        ? sortedProducts[sortedProducts.length - 1]
+        : null;
+
+    // Calculate revenue per item
+    const revenuePerItem =
+      totalItemsSold > 0 ? totalNetRevenue / totalItemsSold : 0;
+
+    const insights = [
+      ['📈 Gross Revenue:', '$' + totalGrossRevenue.toFixed(2)],
+      ['🚚 Total Delivery Fees:', '-$' + totalDeliveryFees.toFixed(2)],
+      ['🏷️ Total Discounts:', '-$' + totalDiscounts.toFixed(2)],
+      ['💵 Net Revenue:', '$' + totalNetRevenue.toFixed(2)],
+      [''],
+      ['🛒 Total Transactions:', totalTransactions],
+      ['📦 Total Items Sold:', totalItemsSold],
+      ['🎁 Free Items Given:', totalFreeGiven],
+      ['💰 Average Sale Value:', '$' + overallAvgSale.toFixed(2)],
+      ['📊 Avg Items per Transaction:', avgItemsPerTransaction.toFixed(1)],
+      ['💵 Revenue per Item:', '$' + revenuePerItem.toFixed(2)],
+      ['📅 Reporting Period:', sortedKeys.length + ' months'],
+      [''],
+      ['🏆 TOP PERFORMERS:'],
+      ['Best Selling Products:', top3Products || 'N/A'],
+      [
+        'Best Sales Day:',
+        bestDay.day + ' ($' + bestDay.revenue.toFixed(2) + ')',
+      ],
+      [''],
+      ['⚠️ ATTENTION NEEDED:'],
+      [
+        'Slowest Selling:',
+        slowestProduct
+          ? (slowestProduct.productName || slowestProduct.productId) +
+            ' (' +
+            slowestProduct.totalQuantity +
+            ' units)'
+          : 'N/A',
+      ],
+      ['Free Items Cost:', totalFreeGiven + ' items given away'],
+    ];
+
+    insights.forEach((row) => {
+      if (row.length === 2) {
+        reportSheet
+          .getRange(currentRow, 1)
+          .setValue(row[0])
+          .setFontWeight('bold');
+        reportSheet.getRange(currentRow, 2).setValue(row[1]);
+      } else if (
+        (row[0] && row[0].includes('TOP')) ||
+        (row[0] && row[0].includes('ATTENTION'))
+      ) {
+        reportSheet
+          .getRange(currentRow, 1)
+          .setValue(row[0])
+          .setFontWeight('bold')
+          .setFontSize(11);
+      }
+      currentRow++;
+    });
 
     // Set column widths
-    reportSheet.setColumnWidth(1, 60); // Year
-    reportSheet.setColumnWidth(2, 60); // Month
-    reportSheet.setColumnWidth(3, 100); // Revenue
-    reportSheet.setColumnWidth(4, 100); // Transactions
-    reportSheet.setColumnWidth(5, 100); // Items Sold
-    reportSheet.setColumnWidth(6, 100); // Avg Sale
-    reportSheet.setColumnWidth(7, 90); // Growth %
-
-    // Format summary section
-    const summaryStartRow = summaryRow;
-    const summaryEndRow = summaryRow + 5;
-    reportSheet
-      .getRange(summaryStartRow, 1, summaryEndRow - summaryStartRow + 1, 1)
-      .setFontWeight('bold');
-    reportSheet
-      .getRange(summaryStartRow, 2, summaryEndRow - summaryStartRow + 1, 1)
-      .setNumberFormat('#,##0.00');
-
-    // Add borders
-    const dataRange = reportSheet.getRange(1, 1, sortedKeys.length + 1, 7);
-    dataRange.setBorder(true, true, true, true, true, true);
+    reportSheet.setColumnWidth(1, 80);
+    reportSheet.setColumnWidth(2, 180);
+    reportSheet.setColumnWidth(3, 100);
+    reportSheet.setColumnWidth(4, 100);
+    reportSheet.setColumnWidth(5, 100);
+    reportSheet.setColumnWidth(6, 100);
+    reportSheet.setColumnWidth(7, 110);
+    reportSheet.setColumnWidth(8, 100);
 
     SpreadsheetApp.getUi().alert(
-      "Comprehensive monthly report generated successfully in the 'Report' sheet!",
+      "Enhanced report generated successfully in the 'Report' sheet!\n\nIncludes:\n• Monthly Overview\n• Product Performance\n• Sales by Day of Week\n• Key Insights & Summary",
     );
   } catch (error) {
     SpreadsheetApp.getUi().alert('Error generating report: ' + error.message);
@@ -1307,5 +1806,368 @@ function createCombinedSalesView() {
   } catch (error) {
     SpreadsheetApp.getUi().alert('Error creating sales view: ' + error.message);
     Logger.log('Error details: ' + error.toString());
+  }
+}
+
+/**
+ * Sync Sales View sheet back to Sales and SaleItems sheets
+ * This reads from Sales View and updates the underlying data sheets
+ */
+function syncSalesViewToData() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const viewSheet = ss.getSheetByName('Sales View');
+    const saleSheet = ss.getSheetByName('Sales');
+    const itemSheet = ss.getSheetByName('SaleItems');
+
+    if (!viewSheet) {
+      SpreadsheetApp.getUi().alert(
+        'Sales View sheet not found. Please create it first using "Create Combined Sales View".',
+      );
+      return;
+    }
+
+    if (!saleSheet || !itemSheet) {
+      SpreadsheetApp.getUi().alert('Sales or SaleItems sheet not found.');
+      return;
+    }
+
+    if (viewSheet.getLastRow() <= 1) {
+      SpreadsheetApp.getUi().alert('Sales View sheet is empty.');
+      return;
+    }
+
+    // Read Sales View data (skip header)
+    // Columns: Sale ID, Date, Product Name, Quantity, Unit Price, Item Total, Sale Total
+    const viewData = viewSheet
+      .getRange(2, 1, viewSheet.getLastRow() - 1, 7)
+      .getValues();
+
+    // Get product map for looking up product IDs by name
+    const products = getProducts();
+    const productNameToId = {};
+    products.forEach((p) => {
+      productNameToId[p.name] = p.id;
+    });
+
+    // Parse Sales View into sales and items
+    const salesMap = {}; // saleId -> { date, totalAmount }
+    const itemsMap = {}; // saleId -> [ { productName, quantity, unitPrice, itemTotal } ]
+
+    let currentSaleId = null;
+    let currentDate = null;
+
+    viewData.forEach((row) => {
+      const saleId = row[0];
+      const date = row[1];
+      const productName = row[2];
+      const quantity = row[3];
+      const unitPrice = row[4];
+      const itemTotal = row[5];
+      const saleTotal = row[6];
+
+      // If sale ID is present, this is a new sale or first item of a sale
+      if (saleId && saleId !== '') {
+        currentSaleId = saleId;
+        currentDate = date;
+
+        if (!salesMap[currentSaleId]) {
+          salesMap[currentSaleId] = {
+            date: currentDate,
+            totalAmount: saleTotal || 0,
+          };
+          itemsMap[currentSaleId] = [];
+        } else if (saleTotal && saleTotal !== '') {
+          // Update total if provided
+          salesMap[currentSaleId].totalAmount = saleTotal;
+        }
+      }
+
+      // Add item if product name exists and it's not "No items"
+      if (
+        currentSaleId &&
+        productName &&
+        productName !== '' &&
+        productName !== 'No items'
+      ) {
+        const isFree =
+          unitPrice === 'FREE' || unitPrice === 0 || unitPrice === '0';
+        const actualUnitPrice = isFree
+          ? 0
+          : typeof unitPrice === 'number'
+          ? unitPrice
+          : parseFloat(unitPrice) || 0;
+        const actualItemTotal =
+          typeof itemTotal === 'number'
+            ? itemTotal
+            : parseFloat(itemTotal) || 0;
+
+        itemsMap[currentSaleId].push({
+          productName: productName,
+          productId: productNameToId[productName] || '',
+          quantity: quantity || 0,
+          isFree: isFree,
+          unitPrice: actualUnitPrice,
+          finalPrice: actualItemTotal,
+        });
+      }
+    });
+
+    // Clear and rebuild Sales sheet (keep header)
+    if (saleSheet.getLastRow() > 1) {
+      saleSheet.getRange(2, 1, saleSheet.getLastRow() - 1, 3).clear();
+    }
+
+    // Clear and rebuild SaleItems sheet (keep header)
+    const itemHeaders = itemSheet
+      .getRange(1, 1, 1, itemSheet.getLastColumn())
+      .getValues()[0];
+    const hasProductNameCol = itemHeaders.includes('Product Name');
+    const itemColCount = hasProductNameCol ? 7 : 6;
+
+    if (itemSheet.getLastRow() > 1) {
+      itemSheet
+        .getRange(2, 1, itemSheet.getLastRow() - 1, itemColCount)
+        .clear();
+    }
+
+    // Write sales data
+    const saleIds = Object.keys(salesMap);
+    let saleRow = 2;
+    let itemRow = 2;
+
+    saleIds.forEach((saleId) => {
+      const sale = salesMap[saleId];
+      const items = itemsMap[saleId] || [];
+
+      // Write to Sales sheet
+      saleSheet.getRange(saleRow, 1).setValue(saleId);
+      saleSheet.getRange(saleRow, 2).setValue(sale.date);
+      saleSheet.getRange(saleRow, 3).setValue(sale.totalAmount);
+      saleRow++;
+
+      // Write to SaleItems sheet
+      items.forEach((item) => {
+        if (hasProductNameCol) {
+          itemSheet
+            .getRange(itemRow, 1, 1, 7)
+            .setValues([
+              [
+                saleId,
+                item.productId,
+                item.productName,
+                item.quantity,
+                item.isFree,
+                item.unitPrice,
+                item.finalPrice,
+              ],
+            ]);
+        } else {
+          itemSheet
+            .getRange(itemRow, 1, 1, 6)
+            .setValues([
+              [
+                saleId,
+                item.productId,
+                item.quantity,
+                item.isFree,
+                item.unitPrice,
+                item.finalPrice,
+              ],
+            ]);
+        }
+        itemRow++;
+      });
+    });
+
+    const syncedSales = saleIds.length;
+    const syncedItems = itemRow - 2;
+
+    SpreadsheetApp.getUi().alert(
+      `Sync completed!\n\nSynced ${syncedSales} sales and ${syncedItems} items from Sales View to Sales and SaleItems sheets.`,
+    );
+  } catch (error) {
+    SpreadsheetApp.getUi().alert('Error syncing data: ' + error.message);
+    Logger.log('Error details: ' + error.toString());
+  }
+}
+
+// =========================
+// DELETE SALE FUNCTIONS
+// =========================
+
+/**
+ * Get all sales for dropdown
+ */
+function getAllSales() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const saleSheet = ss.getSheetByName('Sales');
+
+  if (!saleSheet || saleSheet.getLastRow() <= 1) {
+    return [];
+  }
+
+  const headers = saleSheet
+    .getRange(1, 1, 1, saleSheet.getLastColumn())
+    .getValues()[0];
+  const data = saleSheet
+    .getRange(2, 1, saleSheet.getLastRow() - 1, saleSheet.getLastColumn())
+    .getValues();
+
+  const dateColIdx = 1;
+  const totalColIdx = headers.indexOf('Total Amount');
+  const totalCol = totalColIdx >= 0 ? totalColIdx : 2;
+
+  return data
+    .map((row) => {
+      const rawDate = row[dateColIdx];
+      let dateStr = '';
+      if (rawDate instanceof Date) {
+        dateStr = rawDate.toLocaleString();
+      } else if (rawDate) {
+        dateStr = String(rawDate);
+      }
+      return {
+        id: row[0],
+        date: dateStr,
+        total: row[totalCol] || 0,
+      };
+    })
+    .reverse(); // Most recent first
+}
+
+/**
+ * Open sidebar to delete a sale
+ */
+function openDeleteSaleSidebar() {
+  const template = HtmlService.createTemplateFromFile('deleteSale');
+  template.sales = getAllSales();
+  const html = template.evaluate().setTitle('Delete Sale').setWidth(450);
+  SpreadsheetApp.getUi().showSidebar(html);
+}
+
+/**
+ * Delete a sale and restock products
+ */
+function deleteSale(saleId) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const saleSheet = ss.getSheetByName('Sales');
+    const itemSheet = ss.getSheetByName('SaleItems');
+    const prodSheet = ss.getSheetByName('Products');
+    const deliverySheet = ss.getSheetByName('DeliveryCosts');
+
+    if (!saleSheet || !itemSheet || !prodSheet) {
+      throw new Error('Required sheets not found');
+    }
+
+    // Get item headers to find column indices
+    const itemHeaders = itemSheet
+      .getRange(1, 1, 1, itemSheet.getLastColumn())
+      .getValues()[0];
+    const hasProductName = itemHeaders.includes('Product Name');
+    const productIdColIdx = 1;
+    const quantityColIdx = hasProductName ? 3 : 2;
+
+    // Get product headers
+    const prodHeaders = prodSheet
+      .getRange(1, 1, 1, prodSheet.getLastColumn())
+      .getValues()[0];
+    const prodIdColIdx = prodHeaders.indexOf('ID');
+    const prodStockColIdx = prodHeaders.indexOf('Stock');
+
+    if (prodIdColIdx < 0 || prodStockColIdx < 0) {
+      throw new Error('Product sheet missing ID or Stock column');
+    }
+
+    // Find and collect items to restock
+    const itemsData = itemSheet
+      .getRange(2, 1, itemSheet.getLastRow() - 1, itemSheet.getLastColumn())
+      .getValues();
+    const itemsToRestock = [];
+    const itemRowsToDelete = [];
+
+    for (let i = 0; i < itemsData.length; i++) {
+      if (itemsData[i][0] === saleId) {
+        itemsToRestock.push({
+          productId: itemsData[i][productIdColIdx],
+          quantity: itemsData[i][quantityColIdx] || 0,
+        });
+        itemRowsToDelete.push(i + 2); // +2 because row 1 is header, and array is 0-indexed
+      }
+    }
+
+    // Restock products
+    const prodData = prodSheet.getDataRange().getValues();
+    for (const item of itemsToRestock) {
+      for (let i = 1; i < prodData.length; i++) {
+        if (prodData[i][prodIdColIdx] === item.productId) {
+          const currentStock = prodData[i][prodStockColIdx] || 0;
+          const newStock = currentStock + item.quantity;
+          prodSheet.getRange(i + 1, prodStockColIdx + 1).setValue(newStock);
+          break;
+        }
+      }
+    }
+
+    // Delete item rows (from bottom to top to avoid index shifting)
+    itemRowsToDelete.sort((a, b) => b - a);
+    for (const rowNum of itemRowsToDelete) {
+      itemSheet.deleteRow(rowNum);
+    }
+
+    // Delete from Sales sheet
+    const salesData = saleSheet.getDataRange().getValues();
+    for (let i = 1; i < salesData.length; i++) {
+      if (salesData[i][0] === saleId) {
+        saleSheet.deleteRow(i + 1);
+        break;
+      }
+    }
+
+    // Delete from DeliveryCosts if exists
+    if (deliverySheet && deliverySheet.getLastRow() > 1) {
+      const deliveryData = deliverySheet.getDataRange().getValues();
+      for (let i = deliveryData.length - 1; i >= 1; i--) {
+        if (deliveryData[i][0] === saleId) {
+          deliverySheet.deleteRow(i + 1);
+        }
+      }
+    }
+
+    // Update Sales View if exists
+    const viewSheet = ss.getSheetByName('Sales View');
+    if (viewSheet && viewSheet.getLastRow() > 1) {
+      const viewData = viewSheet.getDataRange().getValues();
+      const viewRowsToDelete = [];
+      for (let i = 1; i < viewData.length; i++) {
+        // Check if this row belongs to the sale (either has the sale ID or is a continuation row)
+        if (viewData[i][0] === saleId) {
+          viewRowsToDelete.push(i + 1);
+          // Also delete continuation rows (empty sale ID, until next sale ID)
+          for (let j = i + 1; j < viewData.length; j++) {
+            if (viewData[j][0] === '' || viewData[j][0] === null) {
+              viewRowsToDelete.push(j + 1);
+            } else {
+              break;
+            }
+          }
+          break;
+        }
+      }
+      // Delete from bottom to top
+      viewRowsToDelete.sort((a, b) => b - a);
+      for (const rowNum of viewRowsToDelete) {
+        viewSheet.deleteRow(rowNum);
+      }
+    }
+
+    return {
+      success: true,
+      message: `Sale ${saleId} deleted successfully!\n\nRestocked ${itemsToRestock.length} item(s).`,
+    };
+  } catch (error) {
+    Logger.log('Error deleting sale: ' + error.toString());
+    return { success: false, message: error.message };
   }
 }
