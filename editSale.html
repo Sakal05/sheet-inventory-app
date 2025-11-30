@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+          'Helvetica Neue', Arial, sans-serif;
+        background: #f8f9fa;
+        padding: 20px;
+        color: #333;
+      }
+
+      .container {
+        background: white;
+        border-radius: 8px;
+        padding: 24px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+
+      h2 {
+        color: #fbbc04;
+        margin-bottom: 20px;
+        font-size: 20px;
+        font-weight: 600;
+      }
+
+      .sale-selector {
+        margin-bottom: 20px;
+        padding: 16px;
+        background: #fff8e1;
+        border: 1px solid #ffcc02;
+        border-radius: 6px;
+      }
+
+      .sale-selector label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 500;
+        color: #5f6368;
+        font-size: 14px;
+      }
+
+      .sale-selector select {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #dadce0;
+        border-radius: 4px;
+        font-size: 14px;
+        font-family: inherit;
+        background: white;
+      }
+
+      .sale-item {
+        background: #f8f9fa;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        padding: 16px;
+        margin-bottom: 16px;
+        position: relative;
+      }
+
+      .sale-item-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+
+      .item-number {
+        font-weight: 600;
+        color: #5f6368;
+        font-size: 14px;
+      }
+
+      .remove-btn {
+        background: #ea4335;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 6px 12px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+
+      .remove-btn:hover {
+        background: #c5221f;
+      }
+
+      .form-row {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .form-group {
+        display: flex;
+        flex-direction: column;
+      }
+
+      label {
+        margin-bottom: 6px;
+        font-weight: 500;
+        color: #5f6368;
+        font-size: 13px;
+      }
+
+      select,
+      input[type='number'] {
+        padding: 10px 12px;
+        border: 1px solid #dadce0;
+        border-radius: 4px;
+        font-size: 14px;
+        transition: border-color 0.2s;
+        font-family: inherit;
+        background: white;
+        width: 100%;
+        box-sizing: border-box;
+      }
+
+      select:focus,
+      input:focus {
+        outline: none;
+        border-color: #fbbc04;
+        box-shadow: 0 0 0 2px rgba(251, 188, 4, 0.1);
+      }
+
+      .checkbox-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      input[type='checkbox'] {
+        width: 20px;
+        height: 20px;
+        cursor: pointer;
+        margin: 0;
+        flex-shrink: 0;
+      }
+
+      .checkbox-group label {
+        margin: 0;
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .stock-info {
+        font-size: 12px;
+        color: #5f6368;
+        margin-top: 4px;
+        font-style: italic;
+      }
+
+      .stock-warning {
+        color: #ea4335;
+        font-weight: 500;
+      }
+
+      .add-item-btn {
+        background: #34a853;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 12px 24px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.2s;
+        width: 100%;
+        margin-bottom: 20px;
+      }
+
+      .add-item-btn:hover {
+        background: #2d8e47;
+      }
+
+      .button-group {
+        display: flex;
+        gap: 10px;
+        margin-top: 24px;
+        padding-top: 20px;
+        border-top: 1px solid #e0e0e0;
+      }
+
+      button[type='submit'],
+      .btn-secondary {
+        flex: 1;
+        padding: 12px 24px;
+        border: none;
+        border-radius: 4px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-family: inherit;
+      }
+
+      button[type='submit'] {
+        background: #fbbc04;
+        color: #000;
+      }
+
+      button[type='submit']:hover {
+        background: #f9ab00;
+        box-shadow: 0 2px 4px rgba(251, 188, 4, 0.3);
+      }
+
+      .btn-secondary {
+        background: #f1f3f4;
+        color: #5f6368;
+      }
+
+      .btn-secondary:hover {
+        background: #e8eaed;
+      }
+
+      .message {
+        padding: 12px;
+        border-radius: 4px;
+        margin-bottom: 16px;
+        display: none;
+        font-size: 14px;
+      }
+
+      .message.success {
+        background: #e8f5e9;
+        color: #2e7d32;
+        border: 1px solid #c8e6c9;
+      }
+
+      .message.error {
+        background: #ffebee;
+        color: #c62828;
+        border: 1px solid #ffcdd2;
+      }
+
+      .empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        color: #5f6368;
+      }
+
+      .loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255, 255, 255, 0.9);
+        display: none;
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+        z-index: 1000;
+      }
+
+      .loading-overlay.active {
+        display: flex;
+      }
+
+      .spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid #e0e0e0;
+        border-top-color: #fbbc04;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .loading-text {
+        margin-top: 16px;
+        color: #5f6368;
+        font-size: 14px;
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Loading overlay -->
+    <div class="loading-overlay" id="loading-overlay">
+      <div class="spinner"></div>
+      <div class="loading-text">Updating sale...</div>
+    </div>
+
+    <div class="container">
+      <h2>✏️ Edit Sale</h2>
+
+      <div id="message" class="message"></div>
+
+      <div class="sale-selector">
+        <label for="sale-select">Select Sale to Edit</label>
+        <select id="sale-select" onchange="loadSale()">
+          <option value="">-- Select a sale --</option>
+        </select>
+      </div>
+
+      <div id="items-container" style="display: none">
+        <div class="empty-state" id="empty-state">
+          Click "Add Product" to start adding items to the sale
+        </div>
+      </div>
+
+      <button
+        class="add-item-btn"
+        id="add-item-btn"
+        onclick="addItem()"
+        style="display: none"
+      >
+        + Add Product
+      </button>
+
+      <!-- Sale-level adjustments -->
+      <div
+        class="sale-item"
+        id="sale-adjustments"
+        style="background: #e8f0fe; border-color: #1a73e8; display: none"
+      >
+        <div class="sale-item-header">
+          <span class="item-number" style="color: #1a73e8"
+            >💰 Sale Adjustments (Optional)</span
+          >
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Delivery Fee</label>
+            <input
+              type="number"
+              id="delivery-fee"
+              step="0.01"
+              min="0"
+              placeholder="Deducted from total"
+              value=""
+            />
+          </div>
+          <div class="form-group">
+            <label>Sale Discount</label>
+            <input
+              type="number"
+              id="sale-discount"
+              step="0.01"
+              min="0"
+              placeholder="Discount on total sale"
+              value=""
+            />
+          </div>
+        </div>
+      </div>
+
+      <div class="button-group" id="button-group" style="display: none">
+        <button
+          type="button"
+          class="btn-secondary"
+          onclick="google.script.host.close()"
+        >
+          Cancel
+        </button>
+        <button type="button" onclick="updateSale()">Update Sale</button>
+      </div>
+    </div>
+
+    <script>
+      var products = [];
+      var sales = [];
+      var currentSaleId = null;
+      var itemCount = 0;
+
+      <? try { ?>
+        var templateProductsJson = <?= JSON.stringify(products || []) ?>;
+        if (typeof templateProductsJson === 'string') {
+          try {
+            products = JSON.parse(templateProductsJson);
+          } catch (e) {
+            products = [];
+          }
+        } else if (Array.isArray(templateProductsJson)) {
+          products = templateProductsJson;
+        }
+      <? } catch(e) { ?>
+        products = [];
+      <? } ?>
+
+      <? try { ?>
+        var templateSalesJson = <?= JSON.stringify(sales || []) ?>;
+        if (typeof templateSalesJson === 'string') {
+          try {
+            sales = JSON.parse(templateSalesJson);
+          } catch (e) {
+            sales = [];
+          }
+        } else if (Array.isArray(templateSalesJson)) {
+          sales = templateSalesJson;
+        }
+      <? } catch(e) { ?>
+        sales = [];
+      <? } ?>
+
+      if (!Array.isArray(products)) products = [];
+      if (!Array.isArray(sales)) sales = [];
+
+      window.onload = function() {
+        const select = document.getElementById('sale-select');
+        if (Array.isArray(sales) && sales.length > 0) {
+          sales.forEach(function(sale) {
+            const option = document.createElement('option');
+            option.value = sale.id;
+            option.textContent = sale.date + ' - $' + (sale.total || 0).toFixed(2);
+            select.appendChild(option);
+          });
+        }
+      };
+
+      function loadSale() {
+        const select = document.getElementById('sale-select');
+        const saleId = select.value;
+
+        if (!saleId) {
+          document.getElementById('items-container').style.display = 'none';
+          document.getElementById('add-item-btn').style.display = 'none';
+          document.getElementById('sale-adjustments').style.display = 'none';
+          document.getElementById('button-group').style.display = 'none';
+          return;
+        }
+
+        currentSaleId = saleId;
+        showLoading(true);
+
+        google.script.run
+          .withSuccessHandler(function(saleData) {
+            showLoading(false);
+            if (!saleData) {
+              showMessage('Sale not found', 'error');
+              return;
+            }
+
+            // Clear existing items
+            const container = document.getElementById('items-container');
+            container.innerHTML = '';
+            container.style.display = 'block';
+            itemCount = 0;
+
+            // Load items
+            if (saleData.items && saleData.items.length > 0) {
+              saleData.items.forEach(function(item) {
+                addItemWithData(item);
+              });
+            }
+
+            // Show UI elements first
+            document.getElementById('add-item-btn').style.display = 'block';
+            document.getElementById('sale-adjustments').style.display = 'block';
+            document.getElementById('button-group').style.display = 'flex';
+
+            // Load delivery fee and discount
+            const deliveryFeeInput = document.getElementById('delivery-fee');
+            const saleDiscountInput = document.getElementById('sale-discount');
+            if (deliveryFeeInput) {
+              deliveryFeeInput.value = saleData.deliveryFee || 0;
+            }
+            if (saleDiscountInput) {
+              saleDiscountInput.value = saleData.discount || 0;
+            }
+          })
+          .withFailureHandler(function(error) {
+            showLoading(false);
+            showMessage('Error loading sale: ' + error.message, 'error');
+          })
+          .getSaleDetailsForEdit(saleId);
+      }
+
+      function addItem() {
+        addItemWithData(null);
+      }
+
+      function addItemWithData(itemData) {
+        if (!Array.isArray(products) || products.length === 0) {
+          showMessage('No products available.', 'error');
+          return;
+        }
+
+        itemCount++;
+        const container = document.getElementById('items-container');
+        const emptyState = document.getElementById('empty-state');
+
+        if (emptyState) {
+          emptyState.style.display = 'none';
+        }
+
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'sale-item';
+        itemDiv.id = 'item-' + itemCount;
+
+        let productOptions = '<option value="">Select a product</option>';
+        if (Array.isArray(products) && products.length > 0) {
+          productOptions += products.map(function(p) {
+            if (p && p.id && p.name) {
+              const selected = itemData && itemData.productId === p.id ? 'selected' : '';
+              return '<option value="' + p.id + '" ' + selected + '>' + p.name + '</option>';
+            }
+            return '';
+          }).filter(function(opt) { return opt !== ''; }).join('');
+        }
+
+        itemDiv.innerHTML =
+          '<div class="sale-item-header">' +
+            '<span class="item-number">Item #' + itemCount + '</span>' +
+            '<button type="button" class="remove-btn" onclick="removeItem(' + itemCount + ')">Remove</button>' +
+          '</div>' +
+          '<div class="form-row">' +
+            '<div class="form-group">' +
+              '<label>Product</label>' +
+              '<select class="prod-select" onchange="updateStock(this, ' + itemCount + ')">' +
+                productOptions +
+              '</select>' +
+              '<span class="stock-info" id="stock-info-' + itemCount + '"></span>' +
+            '</div>' +
+            '<div class="form-group">' +
+              '<label>Quantity</label>' +
+              '<input type="number" class="qty-input" value="' + (itemData ? itemData.quantity : 1) + '" min="1" onchange="updateStock(this.parentElement.parentElement.querySelector(\'.prod-select\'), ' + itemCount + ')">' +
+            '</div>' +
+            '<div class="form-group">' +
+              '<label>Unit Price (Optional)</label>' +
+              '<input type="number" class="unit-price-input" step="0.01" min="0" placeholder="Leave empty to use product price" id="unit-price-' + itemCount + '" value="' + (itemData && itemData.unitPrice ? itemData.unitPrice : '') + '">' +
+            '</div>' +
+            '<div class="form-group">' +
+              '<div class="checkbox-group">' +
+                '<input type="checkbox" class="free-checkbox" id="free-' + itemCount + '" onchange="toggleUnitPrice(' + itemCount + ')" ' + (itemData && itemData.isFree ? 'checked' : '') + '>' +
+                '<label for="free-' + itemCount + '">Free Item</label>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
+
+        container.appendChild(itemDiv);
+
+        // Update stock info if product is selected
+        if (itemData && itemData.productId) {
+          const select = itemDiv.querySelector('.prod-select');
+          updateStock(select, itemCount);
+          if (itemData.isFree) {
+            toggleUnitPrice(itemCount);
+          }
+        }
+      }
+
+      function removeItem(id) {
+        const item = document.getElementById('item-' + id);
+        if (item) {
+          item.remove();
+        }
+
+        const container = document.getElementById('items-container');
+        const items = container.querySelectorAll('.sale-item');
+        if (items.length === 0) {
+          const emptyState = document.getElementById('empty-state');
+          if (emptyState) {
+            emptyState.style.display = 'block';
+          }
+        }
+      }
+
+      function toggleUnitPrice(itemId) {
+        const freeCheckbox = document.getElementById('free-' + itemId);
+        const unitPriceInput = document.getElementById('unit-price-' + itemId);
+        if (freeCheckbox && unitPriceInput) {
+          if (freeCheckbox.checked) {
+            unitPriceInput.disabled = true;
+            unitPriceInput.value = '';
+          } else {
+            unitPriceInput.disabled = false;
+          }
+        }
+      }
+
+      function updateStock(select, itemId) {
+        if (!Array.isArray(products) || products.length === 0) {
+          return;
+        }
+
+        const prodId = select.value;
+        const stockInfo = document.getElementById('stock-info-' + itemId);
+        const qtyInput = select.closest('.sale-item') ? select.closest('.sale-item').querySelector('.qty-input') : null;
+
+        if (!prodId || !qtyInput) {
+          if (stockInfo) {
+            stockInfo.textContent = '';
+            stockInfo.className = 'stock-info';
+          }
+          return;
+        }
+
+        const prod = products.find(function(p) { return p && p.id === prodId; });
+        if (prod && stockInfo) {
+          const qty = Number(qtyInput.value) || 1;
+          const available = prod.stock || 0;
+
+          if (qty > available) {
+            stockInfo.textContent = '⚠️ Only ' + available + ' available';
+            stockInfo.className = 'stock-info stock-warning';
+          } else {
+            stockInfo.textContent = available + ' in stock';
+            stockInfo.className = 'stock-info';
+          }
+        }
+      }
+
+      function updateSale() {
+        try {
+          if (!currentSaleId) {
+            showMessage('Please select a sale to edit', 'error');
+            return;
+          }
+
+          // Get items from items-container only, exclude sale-adjustments
+          const itemsContainer = document.getElementById('items-container');
+          const items = itemsContainer ? itemsContainer.querySelectorAll('.sale-item') : [];
+
+          if (items.length === 0) {
+            showMessage('Please add at least one product to the sale', 'error');
+            return;
+          }
+
+          const saleItems = [];
+          let hasError = false;
+
+          items.forEach((item, index) => {
+            const prodSelect = item.querySelector('.prod-select');
+            const qtyInput = item.querySelector('.qty-input');
+            const unitPriceInput = item.querySelector('.unit-price-input');
+            const freeCheckbox = item.querySelector('.free-checkbox');
+
+            if (!prodSelect || !qtyInput || !freeCheckbox) {
+              showMessage(`Item #${index + 1}: Missing required fields`, 'error');
+              hasError = true;
+              return;
+            }
+
+            const prodId = prodSelect.value;
+            const qty = Number(qtyInput.value) || 0;
+            const unitPrice = unitPriceInput && unitPriceInput.value ? Number(unitPriceInput.value) : null;
+            const isFree = freeCheckbox.checked;
+
+            if (!prodId) {
+              showMessage(`Item #${index + 1}: Please select a product`, 'error');
+              hasError = true;
+              return;
+            }
+
+            if (qty <= 0) {
+              showMessage(`Item #${index + 1}: Please enter a valid quantity`, 'error');
+              hasError = true;
+              return;
+            }
+
+            const prod = products.find(function(p) { return p && p.id === prodId; });
+            if (!prod) {
+              showMessage('Item #' + (index + 1) + ': Product not found', 'error');
+              hasError = true;
+              return;
+            }
+
+            // Note: Stock validation is skipped during edit because we handle stock adjustments
+            // The system will restock removed items and deduct added items
+
+            saleItems.push({
+              productId: prodId,
+              qty: qty,
+              isFree: isFree,
+              unitPrice: unitPrice
+            });
+          });
+
+          if (hasError) {
+            return;
+          }
+
+          const deliveryFeeInput = document.getElementById('delivery-fee');
+          const saleDiscountInput = document.getElementById('sale-discount');
+          const deliveryFee = deliveryFeeInput ? Number(deliveryFeeInput.value) || 0 : 0;
+          const saleDiscount = saleDiscountInput ? Number(saleDiscountInput.value) || 0 : 0;
+
+          showLoading(true);
+
+          google.script.run
+            .withSuccessHandler(function(response) {
+              showLoading(false);
+              if (response && response.success) {
+                showMessage(response.message, 'success');
+                setTimeout(() => {
+                  google.script.host.close();
+                }, 2000);
+              } else {
+                showMessage(response ? response.message : 'Unknown error occurred', 'error');
+              }
+            })
+            .withFailureHandler(function(error) {
+              showLoading(false);
+              console.error('Update sale error:', error);
+              showMessage('Error: ' + (error.message || error.toString() || 'Unknown error'), 'error');
+            })
+            .updateSale(currentSaleId, saleItems, deliveryFee, saleDiscount);
+        } catch (e) {
+          showLoading(false);
+          console.error('Update error:', e);
+          showMessage('Error: ' + e.message, 'error');
+        }
+      }
+
+      function showLoading(show) {
+        const overlay = document.getElementById('loading-overlay');
+        const submitBtn = document.querySelector('.button-group button:last-child');
+        if (show) {
+          overlay.classList.add('active');
+          if (submitBtn) submitBtn.disabled = true;
+        } else {
+          overlay.classList.remove('active');
+          if (submitBtn) submitBtn.disabled = false;
+        }
+      }
+
+      function showMessage(text, type) {
+        const messageDiv = document.getElementById('message');
+        messageDiv.textContent = text;
+        messageDiv.className = 'message ' + type;
+        messageDiv.style.display = 'block';
+        window.scrollTo(0, 0);
+      }
+    </script>
+  </body>
+</html>

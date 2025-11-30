@@ -10,6 +10,7 @@ function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('Inventory App')
     .addItem('Add Sale', 'openAddSaleSidebar')
+    .addItem('Edit Sale', 'openEditSaleSidebar')
     .addItem('Delete Sale', 'openDeleteSaleSidebar')
     .addSeparator()
     .addItem('Generate Monthly Report', 'generateMonthlyReport')
@@ -18,8 +19,8 @@ function onOpen() {
     .addItem('Add Product', 'openAddProductSidebar')
     .addItem('Edit Product', 'openEditProductSidebar')
     .addItem('Delete Product', 'openDeleteProductSidebar')
-    .addSeparator()
-    .addItem('Update Product Names in Sales', 'updateSaleItemsWithProductNames')
+    // .addSeparator()
+    // .addItem('Update Product Names in Sales', 'updateSaleItemsWithProductNames')
     .addToUi();
 }
 
@@ -1281,13 +1282,28 @@ function generateMonthlyReport() {
       ['Free Items Cost:', totalFreeGiven + ' items given away'],
     ];
 
+    const insightsStartRow = currentRow;
     insights.forEach((row) => {
       if (row.length === 2) {
         reportSheet
           .getRange(currentRow, 1)
           .setValue(row[0])
           .setFontWeight('bold');
-        reportSheet.getRange(currentRow, 2).setValue(row[1]);
+        const valueCell = reportSheet.getRange(currentRow, 2);
+        valueCell.setValue(row[1]);
+
+        // Set number format for non-currency values
+        const label = row[0];
+        if (
+          label.includes('Total Items Sold') ||
+          label.includes('Free Items Given') ||
+          label.includes('Total Transactions') ||
+          label.includes('Avg Items per Transaction')
+        ) {
+          valueCell.setNumberFormat('0');
+        } else if (label.includes('Reporting Period')) {
+          valueCell.setNumberFormat('@'); // Text format
+        }
       } else if (
         (row[0] && row[0].includes('TOP')) ||
         (row[0] && row[0].includes('ATTENTION'))
@@ -1851,7 +1867,7 @@ function syncSalesViewToData() {
     });
 
     // Parse Sales View into sales and items
-    const salesMap = {}; // saleId -> { date, totalAmount }
+    const salesMap = {}; // saleId -> { date, totalAmount, subtotal }
     const itemsMap = {}; // saleId -> [ { productName, quantity, unitPrice, itemTotal } ]
 
     let currentSaleId = null;
@@ -1872,14 +1888,23 @@ function syncSalesViewToData() {
         currentDate = date;
 
         if (!salesMap[currentSaleId]) {
+          const total =
+            typeof saleTotal === 'number'
+              ? saleTotal
+              : parseFloat(saleTotal) || 0;
           salesMap[currentSaleId] = {
             date: currentDate,
-            totalAmount: saleTotal || 0,
+            totalAmount: total,
+            subtotal: 0, // Will be calculated from items
           };
           itemsMap[currentSaleId] = [];
         } else if (saleTotal && saleTotal !== '') {
           // Update total if provided
-          salesMap[currentSaleId].totalAmount = saleTotal;
+          const total =
+            typeof saleTotal === 'number'
+              ? saleTotal
+              : parseFloat(saleTotal) || 0;
+          salesMap[currentSaleId].totalAmount = total;
         }
       }
 
@@ -1910,12 +1935,49 @@ function syncSalesViewToData() {
           unitPrice: actualUnitPrice,
           finalPrice: actualItemTotal,
         });
+        // Add to subtotal
+        salesMap[currentSaleId].subtotal += actualItemTotal;
       }
     });
 
+    // Calculate delivery fees and discounts for each sale
+    Object.keys(salesMap).forEach((saleId) => {
+      const sale = salesMap[saleId];
+      const difference = sale.subtotal - sale.totalAmount;
+      // If total is less than subtotal, the difference could be delivery fee or discount
+      // For now, we'll assume it's delivery fee if positive
+      sale.deliveryFee = difference > 0 ? difference : 0;
+      sale.discount = 0; // Discount would need to be manually entered or calculated separately
+    });
+
+    // Check if Sales sheet has new format columns
+    const saleHeaders = saleSheet
+      .getRange(1, 1, 1, saleSheet.getLastColumn())
+      .getValues()[0];
+    const hasNewFormat = saleHeaders.includes('Subtotal');
+
+    // Clean up orphaned rows (rows without Sale ID)
+    if (saleSheet.getLastRow() > 1) {
+      const allSalesData = saleSheet
+        .getRange(2, 1, saleSheet.getLastRow() - 1, saleSheet.getLastColumn())
+        .getValues();
+      const rowsToDelete = [];
+      for (let i = 0; i < allSalesData.length; i++) {
+        if (!allSalesData[i][0] || allSalesData[i][0] === '') {
+          rowsToDelete.push(i + 2); // +2 because row 1 is header
+        }
+      }
+      // Delete from bottom to top
+      rowsToDelete.sort((a, b) => b - a);
+      rowsToDelete.forEach((rowNum) => {
+        saleSheet.deleteRow(rowNum);
+      });
+    }
+
     // Clear and rebuild Sales sheet (keep header)
     if (saleSheet.getLastRow() > 1) {
-      saleSheet.getRange(2, 1, saleSheet.getLastRow() - 1, 3).clear();
+      const colsToClear = hasNewFormat ? saleSheet.getLastColumn() : 3;
+      saleSheet.getRange(2, 1, saleSheet.getLastRow() - 1, colsToClear).clear();
     }
 
     // Clear and rebuild SaleItems sheet (keep header)
@@ -1943,8 +2005,55 @@ function syncSalesViewToData() {
       // Write to Sales sheet
       saleSheet.getRange(saleRow, 1).setValue(saleId);
       saleSheet.getRange(saleRow, 2).setValue(sale.date);
-      saleSheet.getRange(saleRow, 3).setValue(sale.totalAmount);
+
+      if (hasNewFormat) {
+        // New format: Sale ID, Date, Subtotal, Delivery Fee, Discount, Total Amount
+        const subtotalCol = saleHeaders.indexOf('Subtotal') + 1;
+        const deliveryFeeCol = saleHeaders.indexOf('Delivery Fee') + 1;
+        const discountCol = saleHeaders.indexOf('Discount') + 1;
+        const totalCol = saleHeaders.indexOf('Total Amount') + 1;
+
+        if (subtotalCol > 0)
+          saleSheet.getRange(saleRow, subtotalCol).setValue(sale.subtotal);
+        if (deliveryFeeCol > 0)
+          saleSheet
+            .getRange(saleRow, deliveryFeeCol)
+            .setValue(sale.deliveryFee);
+        if (discountCol > 0)
+          saleSheet.getRange(saleRow, discountCol).setValue(sale.discount);
+        if (totalCol > 0) {
+          saleSheet.getRange(saleRow, totalCol).setValue(sale.totalAmount);
+        }
+      } else {
+        // Old format: Sale ID, Date, Total Amount
+        saleSheet.getRange(saleRow, 3).setValue(sale.totalAmount);
+      }
       saleRow++;
+
+      // Update DeliveryCosts sheet if there's a delivery fee
+      if (sale.deliveryFee > 0) {
+        let deliverySheet = ss.getSheetByName('DeliveryCosts');
+        if (!deliverySheet) {
+          deliverySheet = ss.insertSheet('DeliveryCosts');
+          deliverySheet.appendRow(['Sale ID', 'Date', 'Delivery Fee']);
+        } else if (deliverySheet.getLastRow() === 0) {
+          deliverySheet.appendRow(['Sale ID', 'Date', 'Delivery Fee']);
+        }
+
+        // Check if this sale already exists in DeliveryCosts
+        const deliveryData = deliverySheet.getDataRange().getValues();
+        let found = false;
+        for (let i = 1; i < deliveryData.length; i++) {
+          if (deliveryData[i][0] === saleId) {
+            deliverySheet.getRange(i + 1, 3).setValue(sale.deliveryFee);
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          deliverySheet.appendRow([saleId, sale.date, sale.deliveryFee]);
+        }
+      }
 
       // Write to SaleItems sheet
       items.forEach((item) => {
@@ -2168,6 +2277,413 @@ function deleteSale(saleId) {
     };
   } catch (error) {
     Logger.log('Error deleting sale: ' + error.toString());
+    return { success: false, message: error.message };
+  }
+}
+
+// =========================
+// EDIT SALE FUNCTIONS
+// =========================
+
+/**
+ * Get sale details for editing (includes delivery fee and discount)
+ */
+function getSaleDetailsForEdit(saleId) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const saleSheet = ss.getSheetByName('Sales');
+    const itemSheet = ss.getSheetByName('SaleItems');
+
+    if (!saleSheet || !itemSheet) {
+      return null;
+    }
+
+    // Get sale from Sales sheet
+    const saleHeaders = saleSheet
+      .getRange(1, 1, 1, saleSheet.getLastColumn())
+      .getValues()[0];
+    const saleData = saleSheet.getDataRange().getValues();
+
+    let saleInfo = null;
+    for (let i = 1; i < saleData.length; i++) {
+      if (saleData[i][0] === saleId) {
+        const dateColIdx = 1;
+        const subtotalColIdx = saleHeaders.indexOf('Subtotal');
+        const deliveryFeeColIdx = saleHeaders.indexOf('Delivery Fee');
+        const discountColIdx = saleHeaders.indexOf('Discount');
+        const totalColIdx = saleHeaders.indexOf('Total Amount');
+
+        saleInfo = {
+          saleId: saleId,
+          date: saleData[i][dateColIdx],
+          subtotal: subtotalColIdx >= 0 ? saleData[i][subtotalColIdx] || 0 : 0,
+          deliveryFee:
+            deliveryFeeColIdx >= 0 ? saleData[i][deliveryFeeColIdx] || 0 : 0,
+          discount: discountColIdx >= 0 ? saleData[i][discountColIdx] || 0 : 0,
+          totalAmount:
+            totalColIdx >= 0
+              ? saleData[i][totalColIdx] || 0
+              : saleData[i][2] || 0,
+        };
+        break;
+      }
+    }
+
+    if (!saleInfo) {
+      return null;
+    }
+
+    // Get items from SaleItems sheet
+    const itemHeaders = itemSheet
+      .getRange(1, 1, 1, itemSheet.getLastColumn())
+      .getValues()[0];
+    const hasProductName = itemHeaders.includes('Product Name');
+    const itemData = itemSheet.getDataRange().getValues();
+
+    const productIdColIdx = 1;
+    const productNameColIdx = hasProductName ? 2 : -1;
+    const quantityColIdx = hasProductName ? 3 : 2;
+    const isFreeColIdx = hasProductName ? 4 : 3;
+    const unitPriceColIdx = hasProductName ? 5 : 4;
+    const finalPriceColIdx = hasProductName ? 6 : 5;
+
+    const items = [];
+    for (let i = 1; i < itemData.length; i++) {
+      if (itemData[i][0] === saleId) {
+        items.push({
+          productId: itemData[i][productIdColIdx],
+          productName: hasProductName ? itemData[i][productNameColIdx] : '',
+          quantity: itemData[i][quantityColIdx] || 0,
+          isFree: itemData[i][isFreeColIdx] || false,
+          unitPrice: itemData[i][unitPriceColIdx] || 0,
+          finalPrice: itemData[i][finalPriceColIdx] || 0,
+        });
+      }
+    }
+
+    saleInfo.items = items;
+    return saleInfo;
+  } catch (error) {
+    Logger.log('Error getting sale details for edit: ' + error.toString());
+    return null;
+  }
+}
+
+/**
+ * Open sidebar to edit a sale
+ */
+function openEditSaleSidebar() {
+  const template = HtmlService.createTemplateFromFile('editSale');
+  template.sales = getAllSales();
+  template.products = getProducts();
+  const html = template.evaluate().setTitle('Edit Sale').setWidth(550);
+  SpreadsheetApp.getUi().showSidebar(html);
+}
+
+/**
+ * Update a sale
+ */
+function updateSale(saleId, saleItems, deliveryFee, saleDiscount) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    deliveryFee = deliveryFee || 0;
+    saleDiscount = saleDiscount || 0;
+
+    const saleSheet = ss.getSheetByName('Sales');
+    const itemSheet = ss.getSheetByName('SaleItems');
+    const prodSheet = ss.getSheetByName('Products');
+
+    if (!saleSheet || !itemSheet || !prodSheet) {
+      throw new Error('Required sheets not found');
+    }
+
+    // Get original sale items to calculate stock adjustments
+    const originalItems = [];
+    const itemHeaders = itemSheet
+      .getRange(1, 1, 1, itemSheet.getLastColumn())
+      .getValues()[0];
+    const hasProductName = itemHeaders.includes('Product Name');
+    const productIdColIdx = 1;
+    const quantityColIdx = hasProductName ? 3 : 2;
+
+    const allItemData = itemSheet.getDataRange().getValues();
+    for (let i = 1; i < allItemData.length; i++) {
+      if (allItemData[i][0] === saleId) {
+        originalItems.push({
+          productId: allItemData[i][productIdColIdx],
+          quantity: allItemData[i][quantityColIdx] || 0,
+        });
+      }
+    }
+
+    // Calculate stock adjustments
+    const stockAdjustments = {};
+    originalItems.forEach((item) => {
+      stockAdjustments[item.productId] =
+        (stockAdjustments[item.productId] || 0) + item.quantity;
+    });
+    saleItems.forEach((item) => {
+      stockAdjustments[item.productId] =
+        (stockAdjustments[item.productId] || 0) - item.qty;
+    });
+
+    // Apply stock adjustments
+    const prodHeaders = prodSheet
+      .getRange(1, 1, 1, prodSheet.getLastColumn())
+      .getValues()[0];
+    const prodIdColIdx = prodHeaders.indexOf('ID');
+    const prodStockColIdx = prodHeaders.indexOf('Stock');
+
+    const prodData = prodSheet.getDataRange().getValues();
+    for (const productId in stockAdjustments) {
+      const adjustment = stockAdjustments[productId];
+      if (adjustment !== 0) {
+        for (let i = 1; i < prodData.length; i++) {
+          if (prodData[i][prodIdColIdx] === productId) {
+            const currentStock = prodData[i][prodStockColIdx] || 0;
+            const newStock = currentStock + adjustment;
+            if (newStock < 0) {
+              throw new Error(
+                `Insufficient stock for product. Adjustment would result in negative stock.`,
+              );
+            }
+            prodSheet.getRange(i + 1, prodStockColIdx + 1).setValue(newStock);
+            break;
+          }
+        }
+      }
+    }
+
+    // Delete old items
+    const itemRowsToDelete = [];
+    for (let i = allItemData.length - 1; i >= 1; i--) {
+      if (allItemData[i][0] === saleId) {
+        itemRowsToDelete.push(i + 1);
+      }
+    }
+    itemRowsToDelete.forEach((rowNum) => {
+      itemSheet.deleteRow(rowNum);
+    });
+
+    // Add new items
+    const products = getProducts();
+    saleItems.forEach((item) => {
+      const prod = products.find((p) => p.id === item.productId);
+      if (!prod) {
+        throw new Error(`Product with ID ${item.productId} not found`);
+      }
+
+      // Calculate unit price
+      let unitPrice;
+      if (item.isFree) {
+        unitPrice = 0;
+      } else if (
+        item.unitPrice !== null &&
+        item.unitPrice !== undefined &&
+        item.unitPrice !== ''
+      ) {
+        unitPrice = Number(item.unitPrice);
+      } else {
+        unitPrice = prod.discount > 0 ? prod.discount : prod.price;
+      }
+      const finalPrice = unitPrice * item.qty;
+
+      // Insert item
+      if (hasProductName) {
+        itemSheet.appendRow([
+          saleId,
+          item.productId,
+          prod.name,
+          item.qty,
+          item.isFree,
+          unitPrice,
+          finalPrice,
+        ]);
+      } else {
+        itemSheet.appendRow([
+          saleId,
+          item.productId,
+          item.qty,
+          item.isFree,
+          unitPrice,
+          finalPrice,
+        ]);
+      }
+    });
+
+    // Update Sales sheet
+    const saleHeaders = saleSheet
+      .getRange(1, 1, 1, saleSheet.getLastColumn())
+      .getValues()[0];
+    const saleData = saleSheet.getDataRange().getValues();
+
+    // Calculate subtotal
+    let subtotal = 0;
+    saleItems.forEach((item) => {
+      if (!item.isFree) {
+        const prod = products.find((p) => p.id === item.productId);
+        const unitPrice =
+          item.unitPrice !== null &&
+          item.unitPrice !== undefined &&
+          item.unitPrice !== ''
+            ? Number(item.unitPrice)
+            : prod.discount > 0
+            ? prod.discount
+            : prod.price;
+        subtotal += unitPrice * item.qty;
+      }
+    });
+
+    const finalTotal = subtotal - deliveryFee - saleDiscount;
+
+    // Find and update sale row
+    for (let i = 1; i < saleData.length; i++) {
+      if (saleData[i][0] === saleId) {
+        const hasNewFormat = saleHeaders.includes('Subtotal');
+        if (hasNewFormat) {
+          const subtotalCol = saleHeaders.indexOf('Subtotal') + 1;
+          const deliveryFeeCol = saleHeaders.indexOf('Delivery Fee') + 1;
+          const discountCol = saleHeaders.indexOf('Discount') + 1;
+          const totalCol = saleHeaders.indexOf('Total Amount') + 1;
+
+          if (subtotalCol > 0)
+            saleSheet.getRange(i + 1, subtotalCol).setValue(subtotal);
+          if (deliveryFeeCol > 0)
+            saleSheet.getRange(i + 1, deliveryFeeCol).setValue(deliveryFee);
+          if (discountCol > 0)
+            saleSheet.getRange(i + 1, discountCol).setValue(saleDiscount);
+          if (totalCol > 0)
+            saleSheet.getRange(i + 1, totalCol).setValue(finalTotal);
+        } else {
+          saleSheet.getRange(i + 1, 3).setValue(finalTotal);
+        }
+        break;
+      }
+    }
+
+    // Update DeliveryCosts sheet
+    let deliverySheet = ss.getSheetByName('DeliveryCosts');
+    if (deliveryFee > 0) {
+      if (!deliverySheet) {
+        deliverySheet = ss.insertSheet('DeliveryCosts');
+        deliverySheet.appendRow(['Sale ID', 'Date', 'Delivery Fee']);
+      } else if (deliverySheet.getLastRow() === 0) {
+        deliverySheet.appendRow(['Sale ID', 'Date', 'Delivery Fee']);
+      }
+
+      const deliveryData = deliverySheet.getDataRange().getValues();
+      let found = false;
+      for (let i = 1; i < deliveryData.length; i++) {
+        if (deliveryData[i][0] === saleId) {
+          deliverySheet.getRange(i + 1, 3).setValue(deliveryFee);
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        const saleRow = saleSheet
+          .getDataRange()
+          .getValues()
+          .find((row) => row[0] === saleId);
+        if (saleRow) {
+          deliverySheet.appendRow([saleId, saleRow[1], deliveryFee]);
+        }
+      }
+    } else if (deliverySheet) {
+      // Remove delivery fee entry if fee is now 0
+      const deliveryData = deliverySheet.getDataRange().getValues();
+      for (let i = deliveryData.length - 1; i >= 1; i--) {
+        if (deliveryData[i][0] === saleId) {
+          deliverySheet.deleteRow(i + 1);
+          break;
+        }
+      }
+    }
+
+    // Update Sales View if exists
+    const viewSheet = ss.getSheetByName('Sales View');
+    if (viewSheet && viewSheet.getLastRow() > 1) {
+      // Delete old rows for this sale
+      const viewData = viewSheet.getDataRange().getValues();
+      const viewRowsToDelete = [];
+      for (let i = 1; i < viewData.length; i++) {
+        if (viewData[i][0] === saleId) {
+          viewRowsToDelete.push(i + 1);
+          for (let j = i + 1; j < viewData.length; j++) {
+            if (viewData[j][0] === '' || viewData[j][0] === null) {
+              viewRowsToDelete.push(j + 1);
+            } else {
+              break;
+            }
+          }
+          break;
+        }
+      }
+      viewRowsToDelete.sort((a, b) => b - a);
+      viewRowsToDelete.forEach((rowNum) => {
+        viewSheet.deleteRow(rowNum);
+      });
+
+      // Re-add the sale
+      const saleRow = saleSheet
+        .getDataRange()
+        .getValues()
+        .find((row) => row[0] === saleId);
+      if (saleRow) {
+        const saleDate = saleRow[1];
+        const formattedDate =
+          saleDate instanceof Date
+            ? saleDate.toLocaleString()
+            : String(saleDate);
+
+        // Insert at row 2 (newest first)
+        let insertRow = 2;
+        saleItems.forEach((item, index) => {
+          const prod = products.find((p) => p.id === item.productId);
+          const isFirstItem = index === 0;
+          viewSheet.insertRowBefore(insertRow);
+
+          if (isFirstItem) {
+            viewSheet.getRange(insertRow, 1).setValue(saleId);
+            viewSheet.getRange(insertRow, 2).setValue(formattedDate);
+            viewSheet.getRange(insertRow, 7).setValue(finalTotal.toFixed(2));
+            viewSheet.getRange(insertRow, 7).setFontWeight('bold');
+            viewSheet.getRange(insertRow, 7).setBackground('#e8f0fe');
+          }
+
+          const unitPrice = item.isFree
+            ? 0
+            : item.unitPrice ||
+              (prod.discount > 0 ? prod.discount : prod.price);
+          const finalPrice = unitPrice * item.qty;
+
+          viewSheet.getRange(insertRow, 3).setValue(prod.name);
+          viewSheet.getRange(insertRow, 4).setValue(item.qty);
+          viewSheet
+            .getRange(insertRow, 5)
+            .setValue(item.isFree ? 'FREE' : unitPrice.toFixed(2));
+          viewSheet.getRange(insertRow, 6).setValue(finalPrice.toFixed(2));
+
+          if (!item.isFree) {
+            viewSheet.getRange(insertRow, 5).setNumberFormat('#,##0.00');
+            viewSheet.getRange(insertRow, 6).setNumberFormat('#,##0.00');
+          }
+
+          insertRow++;
+        });
+      }
+    }
+
+    let message = `Sale updated successfully! Subtotal: $${subtotal.toFixed(
+      2,
+    )}`;
+    if (deliveryFee > 0) message += `, Delivery: -$${deliveryFee.toFixed(2)}`;
+    if (saleDiscount > 0) message += `, Discount: -$${saleDiscount.toFixed(2)}`;
+    message += `, Total: $${finalTotal.toFixed(2)}`;
+
+    return { success: true, message: message };
+  } catch (error) {
+    Logger.log('Error updating sale: ' + error.toString());
     return { success: false, message: error.message };
   }
 }
