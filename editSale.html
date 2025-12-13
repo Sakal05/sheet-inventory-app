@@ -449,7 +449,12 @@
         google.script.run
           .withSuccessHandler(function(saleData) {
             showLoading(false);
-            if (!saleData) {
+            console.log('Received sale data:', saleData);
+            console.log('Type of saleData:', typeof saleData);
+            console.log('Is null?', saleData === null);
+            console.log('Is undefined?', saleData === undefined);
+            
+            if (!saleData || saleData === null || saleData === undefined) {
               showMessage('Sale not found', 'error');
               return;
             }

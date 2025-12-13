@@ -2295,6 +2295,17 @@ function getSaleDetailsForEdit(saleId) {
     const itemSheet = ss.getSheetByName('SaleItems');
 
     if (!saleSheet || !itemSheet) {
+      Logger.log(
+        'Sheets not found: saleSheet=' +
+          !!saleSheet +
+          ', itemSheet=' +
+          !!itemSheet,
+      );
+      return null;
+    }
+
+    if (saleSheet.getLastRow() <= 1) {
+      Logger.log('Sales sheet is empty');
       return null;
     }
 
@@ -2304,18 +2315,49 @@ function getSaleDetailsForEdit(saleId) {
       .getValues()[0];
     const saleData = saleSheet.getDataRange().getValues();
 
+    Logger.log(
+      'Looking for saleId: ' + saleId + ' (type: ' + typeof saleId + ')',
+    );
+    Logger.log('Total rows in Sales sheet: ' + saleData.length);
+    Logger.log(
+      'First few sale IDs: ' +
+        saleData
+          .slice(1, 4)
+          .map((r) => r[0] + ' (type: ' + typeof r[0] + ')')
+          .join(', '),
+    );
+
     let saleInfo = null;
+    const saleIdStr = String(saleId).trim();
+
     for (let i = 1; i < saleData.length; i++) {
-      if (saleData[i][0] === saleId) {
+      const rowSaleId = saleData[i][0];
+
+      // Skip empty rows
+      if (!rowSaleId || rowSaleId === '') {
+        continue;
+      }
+
+      // Compare as strings to handle any type mismatches, trim whitespace
+      if (String(rowSaleId).trim() === saleIdStr) {
         const dateColIdx = 1;
         const subtotalColIdx = saleHeaders.indexOf('Subtotal');
         const deliveryFeeColIdx = saleHeaders.indexOf('Delivery Fee');
         const discountColIdx = saleHeaders.indexOf('Discount');
         const totalColIdx = saleHeaders.indexOf('Total Amount');
 
+        // Convert date to string for proper serialization
+        const rawDate = saleData[i][dateColIdx];
+        let dateStr = '';
+        if (rawDate instanceof Date) {
+          dateStr = rawDate.toLocaleString();
+        } else if (rawDate) {
+          dateStr = String(rawDate);
+        }
+
         saleInfo = {
           saleId: saleId,
-          date: saleData[i][dateColIdx],
+          date: dateStr,
           subtotal: subtotalColIdx >= 0 ? saleData[i][subtotalColIdx] || 0 : 0,
           deliveryFee:
             deliveryFeeColIdx >= 0 ? saleData[i][deliveryFeeColIdx] || 0 : 0,
@@ -2325,11 +2367,21 @@ function getSaleDetailsForEdit(saleId) {
               ? saleData[i][totalColIdx] || 0
               : saleData[i][2] || 0,
         };
+        Logger.log('Found sale: ' + JSON.stringify(saleInfo));
         break;
       }
     }
 
     if (!saleInfo) {
+      Logger.log('Sale not found. Searched for: ' + saleIdStr);
+      Logger.log(
+        'Available sale IDs: ' +
+          saleData
+            .slice(1)
+            .filter((r) => r[0])
+            .map((r) => String(r[0]).trim())
+            .join(', '),
+      );
       return null;
     }
 
@@ -2349,7 +2401,9 @@ function getSaleDetailsForEdit(saleId) {
 
     const items = [];
     for (let i = 1; i < itemData.length; i++) {
-      if (itemData[i][0] === saleId) {
+      const itemSaleId = itemData[i][0];
+      // Compare as strings, skip empty rows
+      if (itemSaleId && String(itemSaleId).trim() === saleIdStr) {
         items.push({
           productId: itemData[i][productIdColIdx],
           productName: hasProductName ? itemData[i][productNameColIdx] : '',
@@ -2361,6 +2415,7 @@ function getSaleDetailsForEdit(saleId) {
       }
     }
 
+    Logger.log('Found ' + items.length + ' items for sale ' + saleIdStr);
     saleInfo.items = items;
     return saleInfo;
   } catch (error) {
